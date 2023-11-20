@@ -71,7 +71,7 @@ Potential Features:
 
 ## Fork Information
 
-Implemented changes from [pitapan5376 fork](https://github.com/pitapan5376/stable-diffusion-discord-bot) on April 8, 2023, at 07:10:00 (JST).
+Implemented changes from [pitapan5376](https://github.com/pitapan5376/stable-diffusion-discord-bot).
 
 ### Changes:
 
