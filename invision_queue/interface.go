@@ -1,13 +1,13 @@
-package imagine_queue
+package invision_queue
 
 import (
-	"stable_diffusion_bot/entities"
+	"kinshi_vision_bot/entities"
 
 	"github.com/bwmarrin/discordgo"
 )
 
 type Queue interface {
-	AddImagine(item *QueueItem) (int, error)
+	AddInvision(item *QueueItem) (int, error)
 	StartPolling(botSession *discordgo.Session)
 	GetBotDefaultSettings() (*entities.DefaultSettings, error)
 	UpdateDefaultDimensions(width, height int) (*entities.DefaultSettings, error)

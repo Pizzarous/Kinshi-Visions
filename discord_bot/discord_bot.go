@@ -3,9 +3,9 @@ package discord_bot
 import (
 	"errors"
 	"fmt"
+	"kinshi_vision_bot/entities"
+	"kinshi_vision_bot/invision_queue"
 	"log"
-	"stable_diffusion_bot/entities"
-	"stable_diffusion_bot/imagine_queue"
 	"strconv"
 	"strings"
 
@@ -16,9 +16,9 @@ type botImpl struct {
 	developmentMode    bool
 	botSession         *discordgo.Session
 	guildID            string
-	imagineQueue       imagine_queue.Queue
+	invisionQueue      invision_queue.Queue
 	registeredCommands []*discordgo.ApplicationCommand
-	imagineCommand     string
+	invisionCommand    string
 	removeCommands     bool
 }
 
@@ -26,25 +26,25 @@ type Config struct {
 	DevelopmentMode bool
 	BotToken        string
 	GuildID         string
-	ImagineQueue    imagine_queue.Queue
-	ImagineCommand  string
+	InvisionQueue   invision_queue.Queue
+	InvisionCommand string
 	RemoveCommands  bool
 }
 
-func (b *botImpl) imagineCommandString() string {
+func (b *botImpl) invisionCommandString() string {
 	if b.developmentMode {
-		return "dev_" + b.imagineCommand
+		return "dev_" + b.invisionCommand
 	}
 
-	return b.imagineCommand
+	return b.invisionCommand
 }
 
-func (b *botImpl) imagineSettingsCommandString() string {
+func (b *botImpl) invisionSettingsCommandString() string {
 	if b.developmentMode {
-		return "dev_" + b.imagineCommand + "_settings"
+		return "dev_" + b.invisionCommand + "_settings"
 	}
 
-	return b.imagineCommand + "_settings"
+	return b.invisionCommand + "_settings"
 }
 
 func New(cfg Config) (Bot, error) {
@@ -56,12 +56,12 @@ func New(cfg Config) (Bot, error) {
 		return nil, errors.New("missing guild ID")
 	}
 
-	if cfg.ImagineQueue == nil {
-		return nil, errors.New("missing imagine queue")
+	if cfg.InvisionQueue == nil {
+		return nil, errors.New("missing invision queue")
 	}
 
-	if cfg.ImagineCommand == "" {
-		return nil, errors.New("missing imagine command")
+	if cfg.InvisionCommand == "" {
+		return nil, errors.New("missing invision command")
 	}
 
 	botSession, err := discordgo.New("Bot " + cfg.BotToken)
@@ -80,18 +80,18 @@ func New(cfg Config) (Bot, error) {
 	bot := &botImpl{
 		developmentMode:    cfg.DevelopmentMode,
 		botSession:         botSession,
-		imagineQueue:       cfg.ImagineQueue,
+		invisionQueue:      cfg.InvisionQueue,
 		registeredCommands: make([]*discordgo.ApplicationCommand, 0),
-		imagineCommand:     cfg.ImagineCommand,
+		invisionCommand:    cfg.InvisionCommand,
 		removeCommands:     cfg.RemoveCommands,
 	}
 
-	err = bot.addImagineCommand()
+	err = bot.addInvisionCommand()
 	if err != nil {
 		return nil, err
 	}
 
-	err = bot.addImagineSettingsCommand()
+	err = bot.addInvisionSettingsCommand()
 	if err != nil {
 		return nil, err
 	}
@@ -100,19 +100,19 @@ func New(cfg Config) (Bot, error) {
 		switch i.Type {
 		case discordgo.InteractionApplicationCommand:
 			switch i.ApplicationCommandData().Name {
-			case bot.imagineCommandString():
-				bot.processImagineCommand(s, i)
-			case bot.imagineSettingsCommandString():
-				bot.processImagineSettingsCommand(s, i)
+			case bot.invisionCommandString():
+				bot.processInvisionCommand(s, i)
+			case bot.invisionSettingsCommandString():
+				bot.processInvisionSettingsCommand(s, i)
 			default:
 				log.Printf("Unknown command '%v'", i.ApplicationCommandData().Name)
 			}
 		case discordgo.InteractionMessageComponent:
 			switch customID := i.MessageComponentData().CustomID; {
-			case customID == "imagine_reroll":
-				bot.processImagineReroll(s, i)
-			case strings.HasPrefix(customID, "imagine_upscale_"):
-				interactionIndex := strings.TrimPrefix(customID, "imagine_upscale_")
+			case customID == "invision_reroll":
+				bot.processInvisionReroll(s, i)
+			case strings.HasPrefix(customID, "invision_upscale_"):
+				interactionIndex := strings.TrimPrefix(customID, "invision_upscale_")
 
 				interactionIndexInt, intErr := strconv.Atoi(interactionIndex)
 				if intErr != nil {
@@ -121,9 +121,9 @@ func New(cfg Config) (Bot, error) {
 					return
 				}
 
-				bot.processImagineUpscale(s, i, interactionIndexInt)
-			case strings.HasPrefix(customID, "imagine_variation_"):
-				interactionIndex := strings.TrimPrefix(customID, "imagine_variation_")
+				bot.processInvisionUpscale(s, i, interactionIndexInt)
+			case strings.HasPrefix(customID, "invision_variation_"):
+				interactionIndex := strings.TrimPrefix(customID, "invision_variation_")
 
 				interactionIndexInt, intErr := strconv.Atoi(interactionIndex)
 				if intErr != nil {
@@ -132,10 +132,10 @@ func New(cfg Config) (Bot, error) {
 					return
 				}
 
-				bot.processImagineVariation(s, i, interactionIndexInt)
-			case customID == "imagine_dimension_setting_menu":
+				bot.processInvisionVariation(s, i, interactionIndexInt)
+			case customID == "invision_dimension_setting_menu":
 				if len(i.MessageComponentData().Values) == 0 {
-					log.Printf("No values for imagine dimension setting menu")
+					log.Printf("No values for invision dimension setting menu")
 
 					return
 				}
@@ -159,10 +159,12 @@ func New(cfg Config) (Bot, error) {
 					return
 				}
 
-				bot.processImagineDimensionSetting(s, i, widthInt, heightInt)
-			case customID == "imagine_batch_count_setting_menu":
+				bot.processInvisionDimensionSetting(s, i, widthInt, heightInt)
+
+			// patch from upstream
+			case customID == "invision_batch_count_setting_menu":
 				if len(i.MessageComponentData().Values) == 0 {
-					log.Printf("No values for imagine batch count setting menu")
+					log.Printf("No values for invision batch count setting menu")
 
 					return
 				}
@@ -192,10 +194,10 @@ func New(cfg Config) (Bot, error) {
 					return
 				}
 
-				bot.processImagineBatchSetting(s, i, batchCountInt, batchSizeInt)
-			case customID == "imagine_batch_size_setting_menu":
+				bot.processInvisionBatchSetting(s, i, batchCountInt, batchSizeInt)
+			case customID == "invision_batch_size_setting_menu":
 				if len(i.MessageComponentData().Values) == 0 {
-					log.Printf("No values for imagine batch count setting menu")
+					log.Printf("No values for invision batch count setting menu")
 
 					return
 				}
@@ -225,7 +227,8 @@ func New(cfg Config) (Bot, error) {
 					return
 				}
 
-				bot.processImagineBatchSetting(s, i, batchCountInt, batchSizeInt)
+				bot.processInvisionBatchSetting(s, i, batchCountInt, batchSizeInt)
+
 			default:
 				log.Printf("Unknown message component '%v'", i.MessageComponentData().CustomID)
 			}
@@ -236,7 +239,7 @@ func New(cfg Config) (Bot, error) {
 }
 
 func (b *botImpl) Start() {
-	b.imagineQueue.StartPolling(b.botSession)
+	b.invisionQueue.StartPolling(b.botSession)
 
 	err := b.teardown()
 	if err != nil {
@@ -262,23 +265,133 @@ func (b *botImpl) teardown() error {
 	return b.botSession.Close()
 }
 
-func (b *botImpl) addImagineCommand() error {
-	log.Printf("Adding command '%s'...", b.imagineCommandString())
+func (b *botImpl) addInvisionCommand() error {
+	log.Printf("Adding command '%s'...", b.invisionCommandString())
 
 	cmd, err := b.botSession.ApplicationCommandCreate(b.botSession.State.User.ID, b.guildID, &discordgo.ApplicationCommand{
-		Name:        b.imagineCommandString(),
-		Description: "Ask the bot to imagine something",
+		Name:        b.invisionCommandString(),
+		Description: "Ask the bot to invision something",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Type:        discordgo.ApplicationCommandOptionString,
 				Name:        "prompt",
-				Description: "The text prompt to imagine",
+				Description: "The text prompt to invision",
 				Required:    true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "negative_prompt",
+				Description: "Negative prompt",
+				Required:    false,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "sampler_name",
+				Description: "sampler",
+				Required:    false,
+				Choices: []*discordgo.ApplicationCommandOptionChoice{
+					{
+						Name:  "Euler a",
+						Value: "Euler a",
+					},
+					{
+						Name:  "DDIM",
+						Value: "DDIM",
+					},
+					{
+						Name:  "PLMS",
+						Value: "PLMS",
+					},
+					{
+						Name:  "UniPC",
+						Value: "UniPC",
+					},
+					{
+						Name:  "Heun",
+						Value: "Heun",
+					},
+					{
+						Name:  "Euler",
+						Value: "Euler",
+					},
+					{
+						Name:  "LMS",
+						Value: "LMS",
+					},
+					{
+						Name:  "LMS Karras",
+						Value: "LMS Karras",
+					},
+					{
+						Name:  "DPM2 a",
+						Value: "DPM2 a",
+					},
+					{
+						Name:  "DPM2 a Karras",
+						Value: "DPM2 a Karras",
+					},
+					{
+						Name:  "DPM2",
+						Value: "DPM2",
+					},
+					{
+						Name:  "DPM2 Karras",
+						Value: "DPM2 Karras",
+					},
+					{
+						Name:  "DPM fast",
+						Value: "DPM fast",
+					},
+					{
+						Name:  "DPM adaptive",
+						Value: "DPM adaptive",
+					},
+					{
+						Name:  "DPM++ 2S a",
+						Value: "DPM++ 2S a",
+					},
+					{
+						Name:  "DPM++ 2M",
+						Value: "DPM++ 2M",
+					},
+					{
+						Name:  "DPM++ SDE",
+						Value: "DPM++ SDE",
+					},
+					{
+						Name:  "DPM++ 2S a Karras",
+						Value: "DPM++ 2S a Karras",
+					},
+					{
+						Name:  "DPM++ 2M Karras",
+						Value: "DPM++ 2M Karras",
+					},
+					{
+						Name:  "DPM++ SDE Karras",
+						Value: "DPM++ SDE Karras",
+					},
+				},
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "use_hires_fix",
+				Description: "use hires.fix or not. default=No for better performance",
+				Required:    false,
+				Choices: []*discordgo.ApplicationCommandOptionChoice{
+					{
+						Name:  "Yes",
+						Value: "true",
+					},
+					{
+						Name:  "No",
+						Value: "false",
+					},
+				},
 			},
 		},
 	})
 	if err != nil {
-		log.Printf("Error creating '%s' command: %v", b.imagineCommandString(), err)
+		log.Printf("Error creating '%s' command: %v", b.invisionCommandString(), err)
 
 		return err
 	}
@@ -288,15 +401,15 @@ func (b *botImpl) addImagineCommand() error {
 	return nil
 }
 
-func (b *botImpl) addImagineSettingsCommand() error {
-	log.Printf("Adding command '%s'...", b.imagineSettingsCommandString())
+func (b *botImpl) addInvisionSettingsCommand() error {
+	log.Printf("Adding command '%s'...", b.invisionSettingsCommandString())
 
 	cmd, err := b.botSession.ApplicationCommandCreate(b.botSession.State.User.ID, b.guildID, &discordgo.ApplicationCommand{
-		Name:        b.imagineSettingsCommandString(),
-		Description: "Change the default settings for the imagine command",
+		Name:        b.invisionSettingsCommandString(),
+		Description: "Change the default settings for the invision command",
 	})
 	if err != nil {
-		log.Printf("Error creating '%s' command: %v", b.imagineSettingsCommandString(), err)
+		log.Printf("Error creating '%s' command: %v", b.invisionSettingsCommandString(), err)
 
 		return err
 	}
@@ -306,13 +419,13 @@ func (b *botImpl) addImagineSettingsCommand() error {
 	return nil
 }
 
-func (b *botImpl) processImagineReroll(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	position, queueError := b.imagineQueue.AddImagine(&imagine_queue.QueueItem{
-		Type:               imagine_queue.ItemTypeReroll,
+func (b *botImpl) processInvisionReroll(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	position, queueError := b.invisionQueue.AddInvision(&invision_queue.QueueItem{
+		Type:               invision_queue.ItemTypeReroll,
 		DiscordInteraction: i.Interaction,
 	})
 	if queueError != nil {
-		log.Printf("Error adding imagine to queue: %v\n", queueError)
+		log.Printf("Error adding invision to queue: %v\n", queueError)
 	}
 
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -326,14 +439,14 @@ func (b *botImpl) processImagineReroll(s *discordgo.Session, i *discordgo.Intera
 	}
 }
 
-func (b *botImpl) processImagineUpscale(s *discordgo.Session, i *discordgo.InteractionCreate, upscaleIndex int) {
-	position, queueError := b.imagineQueue.AddImagine(&imagine_queue.QueueItem{
-		Type:               imagine_queue.ItemTypeUpscale,
+func (b *botImpl) processInvisionUpscale(s *discordgo.Session, i *discordgo.InteractionCreate, upscaleIndex int) {
+	position, queueError := b.invisionQueue.AddInvision(&invision_queue.QueueItem{
+		Type:               invision_queue.ItemTypeUpscale,
 		InteractionIndex:   upscaleIndex,
 		DiscordInteraction: i.Interaction,
 	})
 	if queueError != nil {
-		log.Printf("Error adding imagine to queue: %v\n", queueError)
+		log.Printf("Error adding invision to queue: %v\n", queueError)
 	}
 
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -347,14 +460,14 @@ func (b *botImpl) processImagineUpscale(s *discordgo.Session, i *discordgo.Inter
 	}
 }
 
-func (b *botImpl) processImagineVariation(s *discordgo.Session, i *discordgo.InteractionCreate, variationIndex int) {
-	position, queueError := b.imagineQueue.AddImagine(&imagine_queue.QueueItem{
-		Type:               imagine_queue.ItemTypeVariation,
+func (b *botImpl) processInvisionVariation(s *discordgo.Session, i *discordgo.InteractionCreate, variationIndex int) {
+	position, queueError := b.invisionQueue.AddInvision(&invision_queue.QueueItem{
+		Type:               invision_queue.ItemTypeVariation,
 		InteractionIndex:   variationIndex,
 		DiscordInteraction: i.Interaction,
 	})
 	if queueError != nil {
-		log.Printf("Error adding imagine to queue: %v\n", queueError)
+		log.Printf("Error adding invision to queue: %v\n", queueError)
 	}
 
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -368,7 +481,7 @@ func (b *botImpl) processImagineVariation(s *discordgo.Session, i *discordgo.Int
 	}
 }
 
-func (b *botImpl) processImagineCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (b *botImpl) processInvisionCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	options := i.ApplicationCommandData().Options
 
 	optionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(options))
@@ -379,17 +492,35 @@ func (b *botImpl) processImagineCommand(s *discordgo.Session, i *discordgo.Inter
 	var position int
 	var queueError error
 	var prompt string
+	negative := ""
+	sampler := "Euler a"
+	hiresfix := false
 
 	if option, ok := optionMap["prompt"]; ok {
 		prompt = option.StringValue()
 
-		position, queueError = b.imagineQueue.AddImagine(&imagine_queue.QueueItem{
+		if nopt, ok := optionMap["negative_prompt"]; ok {
+			negative = nopt.StringValue()
+		}
+
+		if smpl, ok := optionMap["sampler_name"]; ok {
+			sampler = smpl.StringValue()
+		}
+
+		if hires, ok := optionMap["use_hires_fix"]; ok {
+			hiresfix, _ = strconv.ParseBool(hires.StringValue())
+		}
+
+		position, queueError = b.invisionQueue.AddInvision(&invision_queue.QueueItem{
 			Prompt:             prompt,
-			Type:               imagine_queue.ItemTypeImagine,
+			NegativePrompt:     negative,
+			SamplerName1:       sampler,
+			Type:               invision_queue.ItemTypeInvision,
+			UseHiresFix:        hiresfix,
 			DiscordInteraction: i.Interaction,
 		})
 		if queueError != nil {
-			log.Printf("Error adding imagine to queue: %v\n", queueError)
+			log.Printf("Error adding invision to queue: %v\n", queueError)
 		}
 	}
 
@@ -397,10 +528,11 @@ func (b *botImpl) processImagineCommand(s *discordgo.Session, i *discordgo.Inter
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: fmt.Sprintf(
-				"I'm dreaming something up for you. You are currently #%d in line.\n<@%s> asked me to imagine \"%s\".",
+				"I'm dreaming something up for you. You are currently #%d in line.\n<@%s> asked me to invision \"%s\", with sampler: %s",
 				position,
 				i.Member.User.ID,
-				prompt),
+				prompt,
+				sampler),
 		},
 	})
 	if err != nil {
@@ -408,6 +540,7 @@ func (b *botImpl) processImagineCommand(s *discordgo.Session, i *discordgo.Inter
 	}
 }
 
+// patch from upstream
 func settingsMessageComponents(settings *entities.DefaultSettings) []discordgo.MessageComponent {
 	minValues := 1
 
@@ -415,7 +548,7 @@ func settingsMessageComponents(settings *entities.DefaultSettings) []discordgo.M
 		discordgo.ActionsRow{
 			Components: []discordgo.MessageComponent{
 				discordgo.SelectMenu{
-					CustomID:  "imagine_dimension_setting_menu",
+					CustomID:  "invision_dimension_setting_menu",
 					MinValues: &minValues,
 					MaxValues: 1,
 					Options: []discordgo.SelectMenuOption{
@@ -436,7 +569,7 @@ func settingsMessageComponents(settings *entities.DefaultSettings) []discordgo.M
 		discordgo.ActionsRow{
 			Components: []discordgo.MessageComponent{
 				discordgo.SelectMenu{
-					CustomID:  "imagine_batch_count_setting_menu",
+					CustomID:  "invision_batch_count_setting_menu",
 					MinValues: &minValues,
 					MaxValues: 1,
 					Options: []discordgo.SelectMenuOption{
@@ -462,7 +595,7 @@ func settingsMessageComponents(settings *entities.DefaultSettings) []discordgo.M
 		discordgo.ActionsRow{
 			Components: []discordgo.MessageComponent{
 				discordgo.SelectMenu{
-					CustomID:  "imagine_batch_size_setting_menu",
+					CustomID:  "invision_batch_size_setting_menu",
 					MinValues: &minValues,
 					MaxValues: 1,
 					Options: []discordgo.SelectMenuOption{
@@ -488,8 +621,8 @@ func settingsMessageComponents(settings *entities.DefaultSettings) []discordgo.M
 	}
 }
 
-func (b *botImpl) processImagineSettingsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	botSettings, err := b.imagineQueue.GetBotDefaultSettings()
+func (b *botImpl) processInvisionSettingsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	botSettings, err := b.invisionQueue.GetBotDefaultSettings()
 	if err != nil {
 		log.Printf("error getting default settings for settings command: %v", err)
 
@@ -502,7 +635,7 @@ func (b *botImpl) processImagineSettingsCommand(s *discordgo.Session, i *discord
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Title:      "Settings",
-			Content:    "Choose defaults settings for the imagine command:",
+			Content:    "Choose defaults settings for the invision command:",
 			Components: messageComponents,
 		},
 	})
@@ -511,8 +644,8 @@ func (b *botImpl) processImagineSettingsCommand(s *discordgo.Session, i *discord
 	}
 }
 
-func (b *botImpl) processImagineDimensionSetting(s *discordgo.Session, i *discordgo.InteractionCreate, height, width int) {
-	botSettings, err := b.imagineQueue.UpdateDefaultDimensions(width, height)
+func (b *botImpl) processInvisionDimensionSetting(s *discordgo.Session, i *discordgo.InteractionCreate, height, width int) {
+	botSettings, err := b.invisionQueue.UpdateDefaultDimensions(width, height)
 	if err != nil {
 		log.Printf("error updating default dimensions: %v", err)
 
@@ -531,10 +664,10 @@ func (b *botImpl) processImagineDimensionSetting(s *discordgo.Session, i *discor
 
 	messageComponents := settingsMessageComponents(botSettings)
 
-	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
-			Content:    "Choose defaults settings for the imagine command:",
+			Content:    "Choose defaults settings for the invision command:",
 			Components: messageComponents,
 		},
 	})
@@ -543,8 +676,8 @@ func (b *botImpl) processImagineDimensionSetting(s *discordgo.Session, i *discor
 	}
 }
 
-func (b *botImpl) processImagineBatchSetting(s *discordgo.Session, i *discordgo.InteractionCreate, batchCount, batchSize int) {
-	botSettings, err := b.imagineQueue.UpdateDefaultBatch(batchCount, batchSize)
+func (b *botImpl) processInvisionBatchSetting(s *discordgo.Session, i *discordgo.InteractionCreate, batchCount, batchSize int) {
+	botSettings, err := b.invisionQueue.UpdateDefaultBatch(batchCount, batchSize)
 	if err != nil {
 		log.Printf("error updating batch settings: %v", err)
 
@@ -566,7 +699,7 @@ func (b *botImpl) processImagineBatchSetting(s *discordgo.Session, i *discordgo.
 	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
-			Content:    "Choose defaults settings for the imagine command:",
+			Content:    "Choose defaults settings for the invision command:",
 			Components: messageComponents,
 		},
 	})

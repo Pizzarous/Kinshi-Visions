@@ -1,100 +1,177 @@
 # Stable Diffusion Discord Bot
 
-This is a Discord bot that interfaces with the Automatic1111 API, from this project: https://github.com/AUTOMATIC1111/stable-diffusion-webui 
+This Discord bot interacts with the Automatic1111 API, part of the [Stable Diffusion WebUI project](https://github.com/AUTOMATIC1111/stable-diffusion-webui).
 
-Video showing off the current features:
-https://www.youtube.com/watch?v=of5MBh3ueMk
+Watch a demo of the current features [here](https://www.youtube.com/watch?v=of5MBh3ueMk).
 
 ## Installation
 
-1. Download the appropriate version for your system from the releases page: https://github.com/AndBobsYourUncle/stable-diffusion-discord-bot/releases
-   1. Windows users will need to use the windows-amd64 version
-   2. Intel Macs will need to use the darwin-amd64 version
-   3. M1 Macs will need to use the darwin-arm64 version
-   4. Devices like a Raspberry Pi will need to use the linux-arm64 version
-   5. Most other Linux devices will need to use the linux-amd64 version
-2. Extract the archive folder to a location of your choice
+1. Download the suitable version from the [releases page](https://github.com/AndBobsYourUncle/stable-diffusion-discord-bot/releases):
+   - Windows: `windows-amd64`
+   - Intel Macs: `darwin-amd64`
+   - M1 Macs: `darwin-arm64`
+   - Raspberry Pi: `linux-arm64`
+   - Most other Linux devices: `linux-amd64`
+2. Extract the archive to your preferred location.
 
-## Building (optional, only if you want to build from source)
+## Building (Optional)
 
-1. Clone this repository
-2. Install Go 
-   * This varies with your operating system, but the easiest way is to use the official installer: https://golang.org/dl/ 
-3. Build the bot with `go build`
+1. Clone this repository.
+2. Install Go using the [official installer](https://golang.org/dl/).
+3. Build the bot with `go build`.
 
 ## Usage
 
-1. Create a Discord bot and get the token
-2. Add the Discord bot to your Discord server. It needs permissions to post messages, use slash commands, mentioning anyone, and uploading files.
-3. Ensure that the Automatic 1111 webui is running with `--api` (and also `--listen` if it is running on a different computer than the bot).
-4. Run the bot with `./stable_diffusion_bot -token <token> -guild <guild ID> -host <webui host, e.g. http://127.0.0.1:7860>`
-   * It's important that the `-host` parameter matches the IP address where the A1111 is running. If the bot is on the same computer, `127.0.0.1` will work.
-   * There needs to be no trailing slash after the port number (which is `7860` in this example). So, instead of `http://127.0.0.1:7860/`, it should be `http://127.0.0.1:7860`.
-5. The first run will generate a new SQLite DB file in the current working directory.
+1. Create a Discord bot and obtain the token.
+2. Add the bot to your Discord server with all text permissions.
+3. Ensure the Automatic1111 webui is running with `--api` (and `--listen` if on a different machine).
+4. Run the bot with `./stable_diffusion_bot -token <token> -guild <guild ID> -host <webui host, e.g., http://127.0.0.1:7860>`.
+   - Ensure `-host` matches the A1111's IP address. Use `127.0.0.1` if on the same computer.
+   - No trailing slash after the port number (e.g., `http://127.0.0.1:7860`, not `http://127.0.0.1:7860/`).
+5. The first run generates a new SQLite DB file in the current directory.
 
-The `-imagine <new command name>` flag can be used to have the bot use a different command when running, so that it doesn't collide with a Midjourney bot running on the same Discord server.
+Use `-invision <new command name>` to avoid conflicts with other bots.
 
 ## Commands
 
-### `/imagine_settings`
+### `/invision_settings`
 
-Responds with a message that has buttons to allow updating of the default settings for the `/imagine` command.
+Responds with a message containing buttons to update default settings for `/invision`.
 
-By default, the size is 512x512. However, if you are running the Stable Diffusion 2.0 768 model, you might want to change this to 768x768.
+![Invision Settings](https://user-images.githubusercontent.com/7525989/211077599-482536ef-1a70-4f58-abf0-314c773c64c6.png)
 
-Choosing an option will cause the bot to update the setting, and edit the message in place, allowing further edits.
+### `/invision`
 
-<img width="477" alt="Screenshot 2023-01-06 at 10 41 36 AM" src="https://user-images.githubusercontent.com/7525989/211077599-482536ef-1a70-4f58-abf0-314c773c64c6.png">
+Creates an image from a text prompt (e.g., `/invision cute kitten riding a skateboard`).
 
-### `/imagine`
-
-Creates an image from a text prompt. (e.g. `/imagine cute kitten riding a skateboard`)
-
-Available options:
-- Aspect Ratio
-  - `--ar <width>:<height>` (e.g. `/imagine cute kitten riding a skateboard --ar 16:9`)
-  - Uses the default width or height, and calculates the final value for the other based on the aspect ratio. It then rounds that value up to the nearest multiple of `8`, to match the expectations of the underlying neural model and SD API.
-  - Under the hood, it will use the "Hires fix" option in the API, which will generate an image with the bot's default width/height, and then resize it to the desired aspect ratio.
+Options:
+- Aspect Ratio: `/invision cute kitten --ar 16:9`
 
 ## How it Works
 
-The bot implements a FIFO queue (first in, first out). When a user issues the `/imagine` command (or uses an interaction button), they are added to the end of the queue.
+The bot uses a FIFO queue to process user commands. It sends interactions to the Automatic1111 WebUI API, updates messages, and handles buttons for re-rolling, variations, and up-scaling.
 
-The bot then checks the queue every second. If the queue is not empty, and there is nothing currently being processed, it will send the top interaction to the Automatic1111 WebUI API, and then remove it from the queue.
+All image data is stored in a local SQLite database.
 
-After the Automatic1111 has finished processing the interaction, the bot will then update the reply message with the finished result.
-
-Buttons are added to the Discord response message for interactions like re-roll, variations, and up-scaling.
-
-All image generations are saved into a local SQLite database, so that the parameters of the image can be retrieved later for variations or up-scaling.
-
-<img width="846" alt="Screenshot 2022-12-22 at 4 25 03 PM" src="https://user-images.githubusercontent.com/7525989/209247258-8c637265-b0b2-419a-98c6-95c4bb78504f.png">
-
-<img width="667" alt="Screenshot 2022-12-22 at 4 25 18 PM" src="https://user-images.githubusercontent.com/7525989/209247280-4318a73a-71f4-48aa-8310-7fdfbbbf6820.png">
-
-Options like aspect ratio are extracted and sanitized from the text prompt, and then the resulting options are stored in the database record for the image generation (for further variations or upscaling):
-
-<img width="995" alt="Screenshot 2022-12-28 at 4 30 43 PM" src="https://user-images.githubusercontent.com/7525989/209888645-b616fbb1-955a-4d3e-9a25-ce43baa6cfbd.png">
+![Bot Workflow](https://user-images.githubusercontent.com/7525989/209247280-4318a73a-71f4-48aa-8310-7fdfbbbf6820.png)
 
 ## Contributing
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+Pull requests are welcome. Major changes? Open an issue first.
 
-There are lots more features that could be added to this bot, such as:
-
-- [x] Moving defaults to the database
-- [ ] Per-user defaults/settings, as well as enforcing limits on a user's usage of the bot
-- [x] Ability to easily re-roll an image
-- [x] Generating multiple images at once
-- [x] Ability to upscale the resulting images
-- [x] Ability to generate variations on a grid image
-- [ ] Ability to tweak more settings when issuing the `/imagine` command (like aspect ratio)
+Potential Features:
+- [x] Move defaults to the database
+- [ ] Per-user defaults/settings, usage limits
+- [x] Re-roll image
+- [x] Generate multiple images
+- [x] Upscale images
+- [x] Generate variations on a grid
+- [ ] More settings for `/invision` command
 - [ ] Image to image processing
 
-I'll probably be adding a few of these over time, but any contributions are also welcome.
+## Fork Information
 
-## Why Go?
+Implemented changes from [pitapan5376 fork](https://github.com/pitapan5376/stable-diffusion-discord-bot) on April 8, 2023, at 07:10:00 (JST).
 
-I like Go a lot better than Python, and for me it's a lot easier to maintain dependencies with Go modules versus running a bunch of different Anaconda environments.
+### Changes:
 
-It's also able to be cross-compiled to a wide range of platforms, which is nice.
+#### 001. Button Order and Icon Captions
+
+Reordered buttons for better alignment on iPhone Discord.
+
+#### 002. Changed Fonts
+
+![Change Prompt Font to Monospace](https://github.com/pizzarous/kinshi-visions/blob/master/document/002_change_prompt_font.png?raw=true)
+
+#### 003. Enable Aspect Ratio (Without Upscaler)
+
+Parsed the `--ar` parameter and computed new values, allowing for different aspect ratios without upscaling. Examples:
+
+- `1girl --ar 4:3`
+  ![Sample for AR 4:3](https://github.com/pizzarous/kinshi-visions/blob/master/document/003_aspect_ratio_4_3.png?raw=true)
+
+- `1girl --ar 1:2`
+  ![Sample for AR 1:2](https://github.com/pizzarous/kinshi-visions/blob/master/document/003_aspect_ratio_1_2.png?raw=true)
+
+#### 004. Add Sampling Steps
+
+Introduced a `--step` parameter to control the number of steps processed during image generation.
+
+- `--step 7` (512x512)
+  ![Sample for Step 7](https://github.com/pizzarous/kinshi-visions/blob/master/document/004_steps_param_7.png?raw=true)
+
+- `--step 50 --ar 2:1` (1024x768)
+  ![Sample for Step 50](https://github.com/pizzarous/kinshi-visions/blob/master/document/004_steps_param_50.png?raw=true)
+
+#### 005. Add CFG Scale Parameter
+
+Introduced the `--cfgscale` parameter to control CFG scale values.
+
+- `--cfgscale 1.2`
+  ![Sample for CFG Scale Low](https://github.com/pizzarous/kinshi-visions/blob/master/document/005_cfg_scale_1.png?raw=true)
+
+- `--cfgscale 15.3`
+  ![Sample for CFG Scale High](https://github.com/pizzarous/kinshi-visions/blob/master/document/005_cfg_scale_15.png?raw=true)
+
+#### 006. Seed Parameter
+
+Added a `--seed` parameter to specify the seed value for image generation.
+
+- `--seed 111`
+  ![Sample for Seed](https://github.com/pizzarous/kinshi-visions/blob/master/document/006_seed.png?raw=true)
+
+#### 007. Negative Prompt Parameter
+
+Introduced a `negative_prompt` parameter to provide a negative prompt for image generation.
+
+![Negative Prompt Param](https://github.com/pizzarous/kinshi-visions/blob/master/document/007_negative_prompt.png?raw=true)
+
+#### 008. Bugfix: Seed Value for Big Int
+
+Fixed an issue where the bot crashed when receiving large seed values.
+
+![Seed on Bigint](https://github.com/pizzarous/kinshi-visions/blob/master/document/008_seed_bigint.png?raw=true)
+
+#### 009. Selection Pop-up for Sampler
+
+Added a pop-up for selecting a sampler for image generation.
+
+![Sampler Choice](https://github.com/pizzarous/kinshi-visions/blob/master/document/009_sampler_selection.png?raw=true)
+
+Sample Samplers:
+- DPM++ S2 a Karras
+  ![Sampler: DPM++ S2 a Karras](https://github.com/pizzarous/kinshi-visions/blob/master/document/009_sampler_DPMppS2aKarras.png?raw=true)
+
+- DPM Adaptive
+  ![Sampler: DPM Adaptive](https://github.com/pizzarous/kinshi-visions/blob/master/document/009_sampler_DPMAdaptive.png?raw=true)
+
+- UniPC
+  ![Sampler: UniPC](https://github.com/pizzarous/kinshi-visions/blob/master/document/009_sampler_UniPC.png?raw=true)
+
+#### 010. Hires.fix
+
+Partial support for `hires.fix`. Added `hr_scale` and `hr_upscaler` to the table.
+
+![Hiresfix1](https://github.com/pizzarous/kinshi-visions/blob/master/document/012_hiresfix1.png?raw=true)
+
+#### 011. Bugfix: NegativePrompt
+
+Fixed an issue where the negative prompt wasn't applied.
+
+#### 012. Hires.fix with Zoom Rate
+
+Added the `--zoom` parameter to switch `hires.fix` on/off with a specified zoom rate.
+
+![Hiresfix2](https://github.com/pizzarous/kinshi-visions/blob/master/document/012_hiresfix2.png?raw=true)
+
+- Hires.fix ON with Zoom 1.2
+  ![Hiresfix3](https://github.com/pizzarous/kinshi-visions/blob/master/document/012_hiresfix3.png?raw=true)
+
+- Hires.fix OFF
+  ![Hiresfix4](https://github.com/pizzarous/kinshi-visions/blob/master/document/012_hiresfix4.png?raw=true)
+
+#### 013. Apply Upstream Update
+
+Included updates from the upstream repository.
+
+Please note that the content has been reviewed, and non-English elements have been removed. If you have any specific questions or need further clarification on any point, feel free to ask.

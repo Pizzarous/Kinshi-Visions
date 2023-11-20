@@ -2,7 +2,7 @@ package default_settings
 
 import (
 	"context"
-	"stable_diffusion_bot/entities"
+	"kinshi_vision_bot/entities"
 )
 
 type Repository interface {

@@ -33,14 +33,14 @@ type jsonTextToImageResponse struct {
 }
 
 type jsonInfoResponse struct {
-	Seed        int   `json:"seed"`
-	AllSeeds    []int `json:"all_seeds"`
-	AllSubseeds []int `json:"all_subseeds"`
+	Seed        int64   `json:"seed"`
+	AllSeeds    []int64 `json:"all_seeds"`
+	AllSubseeds []int   `json:"all_subseeds"`
 }
 
 type TextToImageResponse struct {
 	Images   []string `json:"images"`
-	Seeds    []int    `json:"seeds"`
+	Seeds    []int64  `json:"seeds"`
 	Subseeds []int    `json:"subseeds"`
 }
 
@@ -51,11 +51,13 @@ type TextToImageRequest struct {
 	Height            int     `json:"height"`
 	RestoreFaces      bool    `json:"restore_faces"`
 	EnableHR          bool    `json:"enable_hr"`
+	HRUpscaleRate     float64 `json:"hr_scale"`
+	HRUpscaler        string  `json:"hr_upscaler"`
 	HRResizeX         int     `json:"hr_resize_x"`
 	HRResizeY         int     `json:"hr_resize_y"`
 	DenoisingStrength float64 `json:"denoising_strength"`
 	BatchSize         int     `json:"batch_size"`
-	Seed              int     `json:"seed"`
+	Seed              int64   `json:"seed"`
 	Subseed           int     `json:"subseed"`
 	SubseedStrength   float64 `json:"subseed_strength"`
 	SamplerName       string  `json:"sampler_name"`

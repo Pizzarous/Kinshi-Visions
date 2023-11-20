@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"stable_diffusion_bot/clock"
-	"stable_diffusion_bot/entities"
-	"stable_diffusion_bot/repositories"
+	"kinshi_vision_bot/clock"
+	"kinshi_vision_bot/entities"
+	"kinshi_vision_bot/repositories"
 )
 
 const upsertSetting string = `
@@ -55,6 +55,7 @@ func (repo *sqliteRepo) GetByMemberID(ctx context.Context, memberID string) (*en
 
 	err := repo.dbConn.QueryRowContext(ctx, getSettingByMemberID, memberID).Scan(
 		&setting.MemberID, &setting.Width, &setting.Height, &setting.BatchCount, &setting.BatchSize)
+
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, repositories.NewNotFoundError(fmt.Sprintf("default setting for member ID %s", memberID))

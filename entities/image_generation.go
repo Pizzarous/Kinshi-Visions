@@ -14,12 +14,14 @@ type ImageGeneration struct {
 	Height            int       `json:"height"`
 	RestoreFaces      bool      `json:"restore_faces"`
 	EnableHR          bool      `json:"enable_hr"`
-	HiresWidth        int       `json:"hires_width"`
-	HiresHeight       int       `json:"hires_height"`
+	HRUpscaleRate     float64   `json:"hr_scale"`
+	HRUpscaler        string    `json:"hr_upscaler"`
+	HiresWidth        int       `json:"hr_resize_x"`
+	HiresHeight       int       `json:"hr_resize_y"`
 	DenoisingStrength float64   `json:"denoising_strength"`
 	BatchCount        int       `json:"batch_count"`
 	BatchSize         int       `json:"batch_size"`
-	Seed              int       `json:"seed"`
+	Seed              int64     `json:"seed"`
 	Subseed           int       `json:"subseed"`
 	SubseedStrength   float64   `json:"subseed_strength"`
 	SamplerName       string    `json:"sampler_name"`

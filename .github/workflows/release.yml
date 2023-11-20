@@ -24,5 +24,5 @@ jobs:
           goos: ${{ matrix.goos }}
           goarch: ${{ matrix.goarch }}
           goversion: "https://dl.google.com/go/go1.19.1.linux-amd64.tar.gz"
-          binary_name: "stable_diffusion_bot"
+          binary_name: "kinshi_vision_bot"
           extra_files: LICENSE README.md

@@ -1,4 +1,4 @@
-package imagine_queue
+package invision_queue
 
 import (
 	"bytes"
@@ -6,16 +6,17 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"kinshi_vision_bot/composite_renderer"
+	"kinshi_vision_bot/entities"
+	"kinshi_vision_bot/repositories"
+	"kinshi_vision_bot/repositories/default_settings"
+	"kinshi_vision_bot/repositories/image_generations"
+	"kinshi_vision_bot/stable_diffusion_api"
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"regexp"
-	"stable_diffusion_bot/composite_renderer"
-	"stable_diffusion_bot/entities"
-	"stable_diffusion_bot/repositories"
-	"stable_diffusion_bot/repositories/default_settings"
-	"stable_diffusion_bot/repositories/image_generations"
-	"stable_diffusion_bot/stable_diffusion_api"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,7 +38,7 @@ type queueImpl struct {
 	botSession          *discordgo.Session
 	stableDiffusionAPI  stable_diffusion_api.StableDiffusionAPI
 	queue               chan *QueueItem
-	currentImagine      *QueueItem
+	currentInvision     *QueueItem
 	mu                  sync.Mutex
 	imageGenerationRepo image_generations.Repository
 	compositeRenderer   composite_renderer.Renderer
@@ -81,7 +82,7 @@ func New(cfg Config) (Queue, error) {
 type ItemType int
 
 const (
-	ItemTypeImagine ItemType = iota
+	ItemTypeInvision ItemType = iota
 	ItemTypeReroll
 	ItemTypeUpscale
 	ItemTypeVariation
@@ -89,12 +90,15 @@ const (
 
 type QueueItem struct {
 	Prompt             string
+	NegativePrompt     string
+	SamplerName1       string
 	Type               ItemType
+	UseHiresFix        bool
 	InteractionIndex   int
 	DiscordInteraction *discordgo.Interaction
 }
 
-func (q *queueImpl) AddImagine(item *QueueItem) (int, error) {
+func (q *queueImpl) AddInvision(item *QueueItem) (int, error) {
 	q.queue <- item
 
 	linePosition := len(q.queue)
@@ -126,7 +130,7 @@ func (q *queueImpl) StartPolling(botSession *discordgo.Session) {
 		case <-stop:
 			stopPolling = true
 		case <-time.After(1 * time.Second):
-			if q.currentImagine == nil {
+			if q.currentInvision == nil {
 				q.pullNextInQueue()
 			}
 		}
@@ -146,9 +150,9 @@ func (q *queueImpl) pullNextInQueue() {
 		q.mu.Lock()
 		defer q.mu.Unlock()
 
-		q.currentImagine = element
+		q.currentInvision = element
 
-		q.processCurrentImagine()
+		q.processCurrentInvision()
 	}
 }
 
@@ -304,6 +308,26 @@ type dimensionsResult struct {
 	Height          int
 }
 
+type stepsResult struct {
+	SanitizedPrompt string
+	Steps           int
+}
+
+type cfgScaleResult struct {
+	SanitizedPrompt string
+	CFGScale        float64
+}
+
+type seedResult struct {
+	SanitizedPrompt string
+	Seed            int64
+}
+
+type zoomScaleResult struct {
+	SanitizedPrompt string
+	ZoomScale       float64
+}
+
 const (
 	emdash = '\u2014'
 	hyphen = '\u002D'
@@ -358,17 +382,145 @@ func extractDimensionsFromPrompt(prompt string, width, height int) (*dimensionsR
 	}, nil
 }
 
-func (q *queueImpl) processCurrentImagine() {
+func quotePromptAsMonospace(promptIn string) (quotedprompt string) {
+	// backtick(code) is shown as monospace in Discord client
+	return "`" + promptIn + "`"
+}
+
+// recieve sampling process steps value
+var stepRegex = regexp.MustCompile(`\s?--step ([\d]*)\s?`)
+
+func extractStepsFromPrompt(prompt string, defaultsteps int) (*stepsResult, error) {
+
+	stepMatches := stepRegex.FindStringSubmatch(prompt)
+	stepsValue := defaultsteps
+
+	if len(stepMatches) == 2 {
+		log.Printf("steps overwrite: %#v", stepMatches)
+
+		prompt = stepRegex.ReplaceAllString(prompt, "")
+
+		s, err := strconv.Atoi(stepMatches[1])
+		if err != nil {
+			return nil, err
+		}
+		stepsValue = s
+
+		if s < 1 {
+			stepsValue = defaultsteps
+		}
+	}
+
+	return &stepsResult{
+		SanitizedPrompt: prompt,
+		Steps:           stepsValue,
+	}, nil
+}
+
+var cfgscaleRegex = regexp.MustCompile(`\s?--cfgscale (\d\d?\.?\d?)\s?`)
+
+func extractCFGScaleFromPrompt(prompt string, defaultScale float64) (*cfgScaleResult, error) {
+
+	cfgscaleMatches := cfgscaleRegex.FindStringSubmatch(prompt)
+	cfgValue := defaultScale
+
+	if len(cfgscaleMatches) == 2 {
+		log.Printf("CFG Scale overwrite: %#v", cfgscaleMatches)
+
+		prompt = cfgscaleRegex.ReplaceAllString(prompt, "")
+		c, err := strconv.ParseFloat(cfgscaleMatches[1], 64)
+		if err != nil {
+			return nil, err
+		}
+		cfgValue = c
+
+		if c < 1.0 || c > 30.0 {
+			cfgValue = defaultScale
+		}
+	}
+
+	return &cfgScaleResult{
+		SanitizedPrompt: prompt,
+		CFGScale:        cfgValue,
+	}, nil
+}
+
+var seedRegex = regexp.MustCompile(`\s?--seed ([\d]+)\s?`)
+
+func extractSeedFromPrompt(prompt string) (*seedResult, error) {
+
+	seedMatches := seedRegex.FindStringSubmatch(prompt)
+	var seedValue int64 = 0
+	var Seed_MaxValue int64 = int64(math.MaxInt64) // although SD accepts: 12345678901234567890
+
+	if len(seedMatches) == 2 {
+		log.Printf("Seed overwrite: %#v", seedMatches)
+
+		prompt = seedRegex.ReplaceAllString(prompt, "")
+		s, err := strconv.ParseInt(seedMatches[1], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		if int64(s) > Seed_MaxValue {
+			seedValue = Seed_MaxValue
+		} else {
+			seedValue = int64(s)
+		}
+
+	} else {
+		seedValue = int64(-1)
+	}
+
+	return &seedResult{
+		SanitizedPrompt: prompt,
+		Seed:            seedValue,
+	}, nil
+}
+
+// hires.fix upscaleby
+var zoomRegex = regexp.MustCompile(`\s?--zoom (\d\d?\.?\d?)\s?`)
+
+func extractZoomScaleFromPrompt(prompt string, defaultZoomScale float64) (*zoomScaleResult, error) {
+
+	zoomMatches := zoomRegex.FindStringSubmatch(prompt)
+	zoomValue := defaultZoomScale
+
+	if len(zoomMatches) == 2 {
+		log.Printf("Zoom Scale overwrite: %#v", zoomMatches)
+
+		prompt = zoomRegex.ReplaceAllString(prompt, "")
+		z, err := strconv.ParseFloat(zoomMatches[1], 64)
+		if err != nil {
+			return nil, err
+		}
+		zoomValue = z
+
+		if z < 1.0 || z > 4.0 {
+			zoomValue = defaultZoomScale
+		}
+	}
+
+	return &zoomScaleResult{
+		SanitizedPrompt: prompt,
+		ZoomScale:       zoomValue,
+	}, nil
+}
+
+const defaultNegative = "ugly, tiling, poorly drawn hands, poorly drawn feet, poorly drawn face, out of frame, " +
+	"mutation, mutated, extra limbs, extra legs, extra arms, disfigured, deformed, cross-eye, " +
+	"body out of frame, blurry, bad art, bad anatomy, blurred, text, watermark, grainy"
+
+func (q *queueImpl) processCurrentInvision() {
 	go func() {
 		defer func() {
 			q.mu.Lock()
 			defer q.mu.Unlock()
 
-			q.currentImagine = nil
+			q.currentInvision = nil
 		}()
 
-		if q.currentImagine.Type == ItemTypeUpscale {
-			q.processUpscaleImagine(q.currentImagine)
+		if q.currentInvision.Type == ItemTypeUpscale {
+			q.processUpscaleInvision(q.currentInvision)
 
 			return
 		}
@@ -387,47 +539,124 @@ func (q *queueImpl) processCurrentImagine() {
 			return
 		}
 
-		promptRes, err := extractDimensionsFromPrompt(q.currentImagine.Prompt, defaultWidth, defaultHeight)
+		// add optional parameter: Negative prompt
+		negativePrompt := ""
+
+		if q.currentInvision.NegativePrompt == "" {
+			negativePrompt = defaultNegative
+		} else {
+			negativePrompt = q.currentInvision.NegativePrompt
+		}
+
+		// add optional parameter: sampler
+		samplerName1 := ""
+		if q.currentInvision.SamplerName1 == "" {
+			samplerName1 = "Euler a"
+		} else {
+			samplerName1 = q.currentInvision.SamplerName1
+		}
+
+		promptRes, err := extractDimensionsFromPrompt(q.currentInvision.Prompt, defaultWidth, defaultHeight)
 		if err != nil {
 			log.Printf("Error extracting dimensions from prompt: %v", err)
 
 			return
 		}
 
-		enableHR := false
-		hiresWidth := 0
-		hiresHeight := 0
+		scaledWidth := defaultWidth
+		scaledHeight := defaultHeight
+		hiresWidth := defaultWidth
+		hiresHeight := defaultHeight
 
 		if promptRes.Width > defaultWidth || promptRes.Height > defaultHeight {
-			enableHR = true
+			scaledWidth = promptRes.Width
+			scaledHeight = promptRes.Height
 			hiresWidth = promptRes.Width
 			hiresHeight = promptRes.Height
 		}
 
+		// add optional parameter: enable hires.fix
+		enableHR1 := false
+		upscaleRate1 := 1.0
+		upscalerName1 := ""
+
+		// extract --zoom parameter
+
+		defaultZoomValue1 := 2.0
+		promptResZ, errZ := extractZoomScaleFromPrompt(promptRes.SanitizedPrompt, defaultZoomValue1)
+		if errZ != nil {
+			log.Printf("Error extracting zoom scale from prompt: %v", errZ)
+
+			return
+		}
+
+		enableHR1 = q.currentInvision.UseHiresFix
+		if enableHR1 == true {
+			upscaleRate1 = promptResZ.ZoomScale
+			upscalerName1 = "Latent"
+			hiresWidth = 0
+			hiresHeight = 0
+			// hrSecondPassSteps = 10
+		} else {
+			enableHR1 = false
+			upscaleRate1 = 1.0
+			upscalerName1 = ""
+			hiresWidth = scaledWidth
+			hiresHeight = scaledHeight
+		}
+
+		stepValue := 20 // default steps value
+		promptRes2, err := extractStepsFromPrompt(promptResZ.SanitizedPrompt, stepValue)
+		if err != nil {
+			log.Printf("Error extracting step from prompt: %v", err)
+		} else if promptRes2.Steps != stepValue {
+			stepValue = promptRes2.Steps
+		}
+
+		cfgScaleValue := 9.0 // default CFG scale value
+		promptRes3, err := extractCFGScaleFromPrompt(promptRes2.SanitizedPrompt, cfgScaleValue)
+		if err != nil {
+			log.Printf("Error extracting cfg scale from prompt: %v", err)
+		} else if promptRes3.CFGScale != cfgScaleValue {
+			cfgScaleValue = promptRes3.CFGScale
+		}
+
+		seedValue := int64(-1) // default seed is random
+		promptRes4, err := extractSeedFromPrompt(promptRes3.SanitizedPrompt)
+		if err != nil {
+			log.Printf("Error extracting seed from prompt: %v", err)
+		} else if promptRes4.Seed != seedValue {
+			seedValue = promptRes4.Seed
+		}
+
+		// prompt will displayed as Monospace in Discord
+		var quotedPrompt = quotePromptAsMonospace(promptRes4.SanitizedPrompt)
+		promptRes.SanitizedPrompt = quotedPrompt
+
 		// new generation with defaults
 		newGeneration := &entities.ImageGeneration{
-			Prompt: promptRes.SanitizedPrompt,
-			NegativePrompt: "ugly, tiling, poorly drawn hands, poorly drawn feet, poorly drawn face, out of frame, " +
-				"mutation, mutated, extra limbs, extra legs, extra arms, disfigured, deformed, cross-eye, " +
-				"body out of frame, blurry, bad art, bad anatomy, blurred, text, watermark, grainy",
-			Width:             defaultWidth,
-			Height:            defaultHeight,
+			Prompt:            promptRes.SanitizedPrompt,
+			NegativePrompt:    negativePrompt,
+			Width:             scaledWidth,
+			Height:            scaledHeight,
 			RestoreFaces:      true,
-			EnableHR:          enableHR,
+			EnableHR:          enableHR1,
+			HRUpscaleRate:     upscaleRate1,
+			HRUpscaler:        upscalerName1,
 			HiresWidth:        hiresWidth,
 			HiresHeight:       hiresHeight,
 			DenoisingStrength: 0.7,
-			Seed:              -1,
+			Seed:              seedValue,
 			Subseed:           -1,
 			SubseedStrength:   0,
-			SamplerName:       "Euler a",
-			CfgScale:          9,
-			Steps:             20,
+			SamplerName:       samplerName1,
+			CfgScale:          cfgScaleValue,
+			Steps:             stepValue,
 			Processed:         false,
 		}
 
-		if q.currentImagine.Type == ItemTypeReroll || q.currentImagine.Type == ItemTypeVariation {
-			foundGeneration, err := q.getPreviousGeneration(q.currentImagine, q.currentImagine.InteractionIndex)
+		if q.currentInvision.Type == ItemTypeReroll || q.currentInvision.Type == ItemTypeVariation {
+			foundGeneration, err := q.getPreviousGeneration(q.currentInvision, q.currentInvision.InteractionIndex)
 			if err != nil {
 				log.Printf("Error getting prompt for reroll: %v", err)
 
@@ -441,26 +670,26 @@ func (q *queueImpl) processCurrentImagine() {
 			newGeneration.Subseed = -1
 
 			// for variations, the subseed strength determines how much variation we get
-			if q.currentImagine.Type == ItemTypeVariation {
+			if q.currentInvision.Type == ItemTypeVariation {
 				newGeneration.SubseedStrength = 0.15
 			}
 		}
 
-		err = q.processImagineGrid(newGeneration, q.currentImagine)
+		err = q.processInvisionGrid(newGeneration, q.currentInvision)
 		if err != nil {
-			log.Printf("Error processing imagine grid: %v", err)
+			log.Printf("Error processing invision grid: %v", err)
 
 			return
 		}
 	}()
 }
 
-func (q *queueImpl) getPreviousGeneration(imagine *QueueItem, sortOrder int) (*entities.ImageGeneration, error) {
-	interactionID := imagine.DiscordInteraction.ID
+func (q *queueImpl) getPreviousGeneration(invision *QueueItem, sortOrder int) (*entities.ImageGeneration, error) {
+	interactionID := invision.DiscordInteraction.ID
 	messageID := ""
 
-	if imagine.DiscordInteraction.Message != nil {
-		messageID = imagine.DiscordInteraction.Message.ID
+	if invision.DiscordInteraction.Message != nil {
+		messageID = invision.DiscordInteraction.Message.ID
 	}
 
 	log.Printf("Reimagining interaction: %v, Message: %v", interactionID, messageID)
@@ -477,24 +706,45 @@ func (q *queueImpl) getPreviousGeneration(imagine *QueueItem, sortOrder int) (*e
 	return generation, nil
 }
 
-func imagineMessageContent(generation *entities.ImageGeneration, user *discordgo.User, progress float64) string {
+func invisionMessageContent(generation *entities.ImageGeneration, user *discordgo.User, progress float64) string {
 	if progress >= 0 && progress < 1 {
-		return fmt.Sprintf("<@%s> asked me to imagine \"%s\". Currently dreaming it up for them. Progress: %.0f%%",
+		return fmt.Sprintf("<@%s> asked me to invision \"%s\". Currently dreaming it up for them. Progress: %.0f%%",
 			user.ID, generation.Prompt, progress*100)
 	} else {
-		return fmt.Sprintf("<@%s> asked me to imagine \"%s\", here is what I imagined for them.",
+		seedString := fmt.Sprintf("%d", generation.Seed)
+		if seedString == "-1" {
+			seedString = "at ramdom(-1)"
+		}
+
+		sizeString := ""
+		if generation.EnableHR == true {
+			sizeString = fmt.Sprintf("%d x %d -> (x %s by hires.fix)",
+				generation.Width,
+				generation.Height,
+				strconv.FormatFloat(generation.HRUpscaleRate, 'f', 1, 64))
+		} else {
+			sizeString = fmt.Sprintf("%d x %d",
+				generation.Width,
+				generation.Height)
+		}
+		return fmt.Sprintf("<@%s> asked me to invision \"%s\" at step %d cfgscale %s seed %s with sampler %s. resolution: %s. here is what I invisiond for them.",
 			user.ID,
 			generation.Prompt,
+			generation.Steps,
+			strconv.FormatFloat(generation.CfgScale, 'f', 1, 64),
+			seedString,
+			generation.SamplerName,
+			sizeString,
 		)
 	}
 }
 
-func (q *queueImpl) processImagineGrid(newGeneration *entities.ImageGeneration, imagine *QueueItem) error {
-	log.Printf("Processing imagine #%s: %v\n", imagine.DiscordInteraction.ID, newGeneration.Prompt)
+func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration, invision *QueueItem) error {
+	log.Printf("Processing invision #%s: %v\n", invision.DiscordInteraction.ID, newGeneration.Prompt)
 
-	newContent := imagineMessageContent(newGeneration, imagine.DiscordInteraction.Member.User, 0)
+	newContent := invisionMessageContent(newGeneration, invision.DiscordInteraction.Member.User, 0)
 
-	message, err := q.botSession.InteractionResponseEdit(imagine.DiscordInteraction, &discordgo.WebhookEdit{
+	message, err := q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
 		Content: &newContent,
 	})
 	if err != nil {
@@ -515,9 +765,9 @@ func (q *queueImpl) processImagineGrid(newGeneration *entities.ImageGeneration, 
 		return err
 	}
 
-	newGeneration.InteractionID = imagine.DiscordInteraction.ID
+	newGeneration.InteractionID = invision.DiscordInteraction.ID
 	newGeneration.MessageID = message.ID
-	newGeneration.MemberID = imagine.DiscordInteraction.Member.User.ID
+	newGeneration.MemberID = invision.DiscordInteraction.Member.User.ID
 	newGeneration.SortOrder = 0
 	newGeneration.BatchCount = defaultBatchCount
 	newGeneration.BatchSize = defaultBatchSize
@@ -547,9 +797,9 @@ func (q *queueImpl) processImagineGrid(newGeneration *entities.ImageGeneration, 
 					continue
 				}
 
-				progressContent := imagineMessageContent(newGeneration, imagine.DiscordInteraction.Member.User, progress.Progress)
+				progressContent := invisionMessageContent(newGeneration, invision.DiscordInteraction.Member.User, progress.Progress)
 
-				_, progressErr = q.botSession.InteractionResponseEdit(imagine.DiscordInteraction, &discordgo.WebhookEdit{
+				_, progressErr = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
 					Content: &progressContent,
 				})
 				if progressErr != nil {
@@ -566,6 +816,8 @@ func (q *queueImpl) processImagineGrid(newGeneration *entities.ImageGeneration, 
 		Height:            newGeneration.Height,
 		RestoreFaces:      newGeneration.RestoreFaces,
 		EnableHR:          newGeneration.EnableHR,
+		HRUpscaleRate:     newGeneration.HRUpscaleRate,
+		HRUpscaler:        newGeneration.HRUpscaler,
 		HRResizeX:         newGeneration.HiresWidth,
 		HRResizeY:         newGeneration.HiresHeight,
 		DenoisingStrength: newGeneration.DenoisingStrength,
@@ -583,7 +835,7 @@ func (q *queueImpl) processImagineGrid(newGeneration *entities.ImageGeneration, 
 
 		errorContent := "I'm sorry, but I had a problem imagining your image."
 
-		_, err = q.botSession.InteractionResponseEdit(imagine.DiscordInteraction, &discordgo.WebhookEdit{
+		_, err = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
 			Content: &errorContent,
 		})
 
@@ -592,7 +844,7 @@ func (q *queueImpl) processImagineGrid(newGeneration *entities.ImageGeneration, 
 
 	generationDone <- true
 
-	finishedContent := imagineMessageContent(newGeneration, imagine.DiscordInteraction.Member.User, 1)
+	finishedContent := invisionMessageContent(newGeneration, invision.DiscordInteraction.Member.User, 1)
 
 	log.Printf("Seeds: %v Subseeds:%v", resp.Seeds, resp.Subseeds)
 
@@ -621,6 +873,8 @@ func (q *queueImpl) processImagineGrid(newGeneration *entities.ImageGeneration, 
 			Height:            newGeneration.Height,
 			RestoreFaces:      newGeneration.RestoreFaces,
 			EnableHR:          newGeneration.EnableHR,
+			HRUpscaleRate:     newGeneration.HRUpscaleRate,
+			HRUpscaler:        newGeneration.HRUpscaler,
 			HiresWidth:        newGeneration.HiresWidth,
 			HiresHeight:       newGeneration.HiresHeight,
 			DenoisingStrength: newGeneration.DenoisingStrength,
@@ -648,18 +902,71 @@ func (q *queueImpl) processImagineGrid(newGeneration *entities.ImageGeneration, 
 		return err
 	}
 
-	_, err = q.botSession.InteractionResponseEdit(imagine.DiscordInteraction, &discordgo.WebhookEdit{
+	_, err = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
 		Content: &finishedContent,
 		Files: []*discordgo.File{
 			{
 				ContentType: "image/png",
-				Name:        "imagine.png",
-				Reader:      compositeImage,
+				// append timestamp for grid image result
+				Name:   "invision_" + time.Now().Format("20060102150405") + ".png",
+				Reader: compositeImage,
 			},
 		},
 		Components: &[]discordgo.MessageComponent{
 			discordgo.ActionsRow{
 				Components: []discordgo.MessageComponent{
+					discordgo.Button{
+						// Label is what the user will see on the button.
+						Label: "1",
+						// Style provides coloring of the button. There are not so many styles tho.
+						Style: discordgo.SecondaryButton,
+						// Disabled allows bot to disable some buttons for users.
+						Disabled: false,
+						// CustomID is a thing telling Discord which data to send when this button will be pressed.
+						CustomID: "invision_variation_1",
+						Emoji: discordgo.ComponentEmoji{
+							Name: "♻️",
+						},
+					},
+					discordgo.Button{
+						// Label is what the user will see on the button.
+						Label: "2",
+						// Style provides coloring of the button. There are not so many styles tho.
+						Style: discordgo.SecondaryButton,
+						// Disabled allows bot to disable some buttons for users.
+						Disabled: false,
+						// CustomID is a thing telling Discord which data to send when this button will be pressed.
+						CustomID: "invision_variation_2",
+						Emoji: discordgo.ComponentEmoji{
+							Name: "♻️",
+						},
+					},
+					discordgo.Button{
+						// Label is what the user will see on the button.
+						Label: "3",
+						// Style provides coloring of the button. There are not so many styles tho.
+						Style: discordgo.SecondaryButton,
+						// Disabled allows bot to disable some buttons for users.
+						Disabled: false,
+						// CustomID is a thing telling Discord which data to send when this button will be pressed.
+						CustomID: "invision_variation_3",
+						Emoji: discordgo.ComponentEmoji{
+							Name: "♻️",
+						},
+					},
+					discordgo.Button{
+						// Label is what the user will see on the button.
+						Label: "4",
+						// Style provides coloring of the button. There are not so many styles tho.
+						Style: discordgo.SecondaryButton,
+						// Disabled allows bot to disable some buttons for users.
+						Disabled: false,
+						// CustomID is a thing telling Discord which data to send when this button will be pressed.
+						CustomID: "invision_variation_4",
+						Emoji: discordgo.ComponentEmoji{
+							Name: "♻️",
+						},
+					},
 					discordgo.Button{
 						// Label is what the user will see on the button.
 						Label: "Re-roll",
@@ -668,61 +975,9 @@ func (q *queueImpl) processImagineGrid(newGeneration *entities.ImageGeneration, 
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "imagine_reroll",
+						CustomID: "invision_reroll",
 						Emoji: discordgo.ComponentEmoji{
 							Name: "🎲",
-						},
-					},
-					discordgo.Button{
-						// Label is what the user will see on the button.
-						Label: "V1",
-						// Style provides coloring of the button. There are not so many styles tho.
-						Style: discordgo.SecondaryButton,
-						// Disabled allows bot to disable some buttons for users.
-						Disabled: false,
-						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "imagine_variation_1",
-						Emoji: discordgo.ComponentEmoji{
-							Name: "♻️",
-						},
-					},
-					discordgo.Button{
-						// Label is what the user will see on the button.
-						Label: "V2",
-						// Style provides coloring of the button. There are not so many styles tho.
-						Style: discordgo.SecondaryButton,
-						// Disabled allows bot to disable some buttons for users.
-						Disabled: false,
-						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "imagine_variation_2",
-						Emoji: discordgo.ComponentEmoji{
-							Name: "♻️",
-						},
-					},
-					discordgo.Button{
-						// Label is what the user will see on the button.
-						Label: "V3",
-						// Style provides coloring of the button. There are not so many styles tho.
-						Style: discordgo.SecondaryButton,
-						// Disabled allows bot to disable some buttons for users.
-						Disabled: false,
-						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "imagine_variation_3",
-						Emoji: discordgo.ComponentEmoji{
-							Name: "♻️",
-						},
-					},
-					discordgo.Button{
-						// Label is what the user will see on the button.
-						Label: "V4",
-						// Style provides coloring of the button. There are not so many styles tho.
-						Style: discordgo.SecondaryButton,
-						// Disabled allows bot to disable some buttons for users.
-						Disabled: false,
-						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "imagine_variation_4",
-						Emoji: discordgo.ComponentEmoji{
-							Name: "♻️",
 						},
 					},
 				},
@@ -731,52 +986,52 @@ func (q *queueImpl) processImagineGrid(newGeneration *entities.ImageGeneration, 
 				Components: []discordgo.MessageComponent{
 					discordgo.Button{
 						// Label is what the user will see on the button.
-						Label: "U1",
+						Label: "1",
 						// Style provides coloring of the button. There are not so many styles tho.
 						Style: discordgo.SecondaryButton,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "imagine_upscale_1",
+						CustomID: "invision_upscale_1",
 						Emoji: discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
 					},
 					discordgo.Button{
 						// Label is what the user will see on the button.
-						Label: "U2",
+						Label: "2",
 						// Style provides coloring of the button. There are not so many styles tho.
 						Style: discordgo.SecondaryButton,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "imagine_upscale_2",
+						CustomID: "invision_upscale_2",
 						Emoji: discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
 					},
 					discordgo.Button{
 						// Label is what the user will see on the button.
-						Label: "U3",
+						Label: "3",
 						// Style provides coloring of the button. There are not so many styles tho.
 						Style: discordgo.SecondaryButton,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "imagine_upscale_3",
+						CustomID: "invision_upscale_3",
 						Emoji: discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
 					},
 					discordgo.Button{
 						// Label is what the user will see on the button.
-						Label: "U4",
+						Label: "4",
 						// Style provides coloring of the button. There are not so many styles tho.
 						Style: discordgo.SecondaryButton,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "imagine_upscale_4",
+						CustomID: "invision_upscale_4",
 						Emoji: discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
@@ -808,18 +1063,18 @@ func upscaleMessageContent(user *discordgo.User, fetchProgress, upscaleProgress 
 	}
 }
 
-func (q *queueImpl) processUpscaleImagine(imagine *QueueItem) {
-	interactionID := imagine.DiscordInteraction.ID
+func (q *queueImpl) processUpscaleInvision(invision *QueueItem) {
+	interactionID := invision.DiscordInteraction.ID
 	messageID := ""
 
-	if imagine.DiscordInteraction.Message != nil {
-		messageID = imagine.DiscordInteraction.Message.ID
+	if invision.DiscordInteraction.Message != nil {
+		messageID = invision.DiscordInteraction.Message.ID
 	}
 
 	log.Printf("Upscaling image: %v, Message: %v, Upscale Index: %d",
-		interactionID, messageID, imagine.InteractionIndex)
+		interactionID, messageID, invision.InteractionIndex)
 
-	generation, err := q.imageGenerationRepo.GetByMessageAndSort(context.Background(), messageID, imagine.InteractionIndex)
+	generation, err := q.imageGenerationRepo.GetByMessageAndSort(context.Background(), messageID, invision.InteractionIndex)
 	if err != nil {
 		log.Printf("Error getting image generation: %v", err)
 
@@ -828,9 +1083,9 @@ func (q *queueImpl) processUpscaleImagine(imagine *QueueItem) {
 
 	log.Printf("Found generation: %v", generation)
 
-	newContent := upscaleMessageContent(imagine.DiscordInteraction.Member.User, 0, 0)
+	newContent := upscaleMessageContent(invision.DiscordInteraction.Member.User, 0, 0)
 
-	_, err = q.botSession.InteractionResponseEdit(imagine.DiscordInteraction, &discordgo.WebhookEdit{
+	_, err = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
 		Content: &newContent,
 	})
 	if err != nil {
@@ -869,9 +1124,9 @@ func (q *queueImpl) processUpscaleImagine(imagine *QueueItem) {
 
 				lastProgress = progress.Progress
 
-				progressContent := upscaleMessageContent(imagine.DiscordInteraction.Member.User, fetchProgress, upscaleProgress)
+				progressContent := upscaleMessageContent(invision.DiscordInteraction.Member.User, fetchProgress, upscaleProgress)
 
-				_, progressErr = q.botSession.InteractionResponseEdit(imagine.DiscordInteraction, &discordgo.WebhookEdit{
+				_, progressErr = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
 					Content: &progressContent,
 				})
 				if progressErr != nil {
@@ -892,6 +1147,8 @@ func (q *queueImpl) processUpscaleImagine(imagine *QueueItem) {
 			Height:            generation.Height,
 			RestoreFaces:      generation.RestoreFaces,
 			EnableHR:          generation.EnableHR,
+			HRUpscaleRate:     generation.HRUpscaleRate,
+			HRUpscaler:        generation.HRUpscaler,
 			HRResizeX:         generation.HiresWidth,
 			HRResizeY:         generation.HiresHeight,
 			DenoisingStrength: generation.DenoisingStrength,
@@ -910,7 +1167,7 @@ func (q *queueImpl) processUpscaleImagine(imagine *QueueItem) {
 
 		errorContent := "I'm sorry, but I had a problem upscaling your image."
 
-		_, err = q.botSession.InteractionResponseEdit(imagine.DiscordInteraction, &discordgo.WebhookEdit{
+		_, err = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
 			Content: &errorContent,
 		})
 
@@ -929,18 +1186,20 @@ func (q *queueImpl) processUpscaleImagine(imagine *QueueItem) {
 	imageBuf := bytes.NewBuffer(decodedImage)
 
 	log.Printf("Successfully upscaled image: %v, Message: %v, Upscale Index: %d",
-		interactionID, messageID, imagine.InteractionIndex)
+		interactionID, messageID, invision.InteractionIndex)
 
-	finishedContent := fmt.Sprintf("<@%s> asked me to upscale their image. Here's the result:",
-		imagine.DiscordInteraction.Member.User.ID)
+	finishedContent := fmt.Sprintf("<@%s> asked me to upscale their image. (seed: %d) Here's the result:",
+		invision.DiscordInteraction.Member.User.ID,
+		generation.Seed)
 
-	_, err = q.botSession.InteractionResponseEdit(imagine.DiscordInteraction, &discordgo.WebhookEdit{
+	_, err = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
 		Content: &finishedContent,
 		Files: []*discordgo.File{
 			{
 				ContentType: "image/png",
-				Name:        "imagine.png",
-				Reader:      imageBuf,
+				// add timestamp to output file
+				Name:   "invision_" + time.Now().Format("20060102150405") + ".png",
+				Reader: imageBuf,
 			},
 		},
 	})
