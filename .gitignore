@@ -1,4 +1,5 @@
 kinshi_vision_bot.exe
-.idea/
 sd_discord_bot.sqlite
+_run/
+.idea/
 .env
