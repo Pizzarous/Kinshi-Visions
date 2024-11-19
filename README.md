@@ -61,7 +61,7 @@ Before running the bot, configure an `.env` file to specify your bot’s details
 
 ### `/invision_settings`
 
-Displays buttons in Discord to update default settings for the `/invision` command.
+Displays buttons in Discord to update default settings for the `/invision` command.  
 
 ![Invision Settings](https://user-images.githubusercontent.com/7525989/211077599-482536ef-1a70-4f58-abf0-314c773c64c6.png)
 
@@ -90,7 +90,7 @@ The bot operates as a queue-based system, processing user requests and sending t
 - Image generation.
 - Interaction updates (e.g., re-rolling, variations, up-scaling).
 
-All image data is logged locally in a SQLite database.
+All image data is logged locally in a SQLite database.  
 
 ![Bot Workflow](https://user-images.githubusercontent.com/7525989/209247280-4318a73a-71f4-48aa-8310-7fdfbbbf6820.png)
 
@@ -106,74 +106,74 @@ This bot includes updates from [pitapan5376](https://github.com/pitapan5376/stab
 
 Added the `--ar` parameter to set aspect ratios without upscaling:
 
-- `1girl --ar 4:3`
+- `1girl --ar 4:3`  
   ![Sample for AR 4:3](https://github.com/pizzarous/kinshi-visions/blob/master/document/003_aspect_ratio_4_3.png?raw=true)
-- `1girl --ar 1:2`
+- `1girl --ar 1:2`  
   ![Sample for AR 1:2](https://github.com/pizzarous/kinshi-visions/blob/master/document/003_aspect_ratio_1_2.png?raw=true)
 
 #### 02. Sampling Steps
 
 Introduced `--step` to control generation steps:
 
-- `--step 7` (512x512)
+- `--step 7` (512x512)  
   ![Sample for Step 7](https://github.com/pizzarous/kinshi-visions/blob/master/document/004_steps_param_7.png?raw=true)
 
-- `--step 50 --ar 2:1` (1024x768)
+- `--step 50 --ar 2:1` (1024x768)  
   ![Sample for Step 50](https://github.com/pizzarous/kinshi-visions/blob/master/document/004_steps_param_50.png?raw=true)
 
 #### 03. CFG Scale
 
 Added `--cfgscale` to adjust the CFG scale:
 
-- `--cfgscale 1.2`
+- `--cfgscale 1.2`  
   ![Sample for CFG Scale Low](https://github.com/pizzarous/kinshi-visions/blob/master/document/005_cfg_scale_1.png?raw=true)
 
-- `--cfgscale 15.3`
+- `--cfgscale 15.3`  
   ![Sample for CFG Scale High](https://github.com/pizzarous/kinshi-visions/blob/master/document/005_cfg_scale_15.png?raw=true)
 
 #### 04. Seed Parameter
 
 Use `--seed` to specify a seed value for deterministic results:
 
-- `--seed 111`
+- `--seed 111`  
   ![Sample for Seed](https://github.com/pizzarous/kinshi-visions/blob/master/document/006_seed.png?raw=true)
 
 #### 05. Negative Prompts
 
-Support for negative prompts via `negative_prompt` parameter.
+Support for negative prompts via `negative_prompt` parameter.  
 ![Negative Prompt Param](https://github.com/pizzarous/kinshi-visions/blob/master/document/007_negative_prompt.png?raw=true)
-
+  
 ![Seed on Bigint](https://github.com/pizzarous/kinshi-visions/blob/master/document/008_seed_bigint.png?raw=true)
 
 #### 06. Sampler Selection
 
-Added a pop-up to choose the sampler during image generation.
+Added a pop-up to choose the sampler during image generation.  
 ![Sampler Choice](https://github.com/pizzarous/kinshi-visions/blob/master/document/009_sampler_selection.png?raw=true)
 
-- DPM++ S2 a Karras
+- DPM++ S2 a Karras  
   ![Sampler: DPM++ S2 a Karras](https://github.com/pizzarous/kinshi-visions/blob/master/document/009_sampler_DPMppS2aKarras.png?raw=true)
 
-- DPM Adaptive
+- DPM Adaptive  
   ![Sampler: DPM Adaptive](https://github.com/pizzarous/kinshi-visions/blob/master/document/009_sampler_DPMAdaptive.png?raw=true)
 
-- UniPC
+- UniPC  
   ![Sampler: UniPC](https://github.com/pizzarous/kinshi-visions/blob/master/document/009_sampler_UniPC.png?raw=true)
 
 #### 07. Hires.fix
 
-Partial support for `hires.fix`. Added `hr_scale` and `hr_upscaler` to the table.
+Partial support for `hires.fix`. Added `hr_scale` and `hr_upscaler` to the table.  
 ![Hiresfix1](https://github.com/pizzarous/kinshi-visions/blob/master/document/012_hiresfix1.png?raw=true)
 
 #### 08. Hires.fix with Zoom Rate
 
 Added the `--zoom` parameter to switch `hires.fix` on/off with a specified zoom rate.
-
+  
 ![Hiresfix2](https://github.com/pizzarous/kinshi-visions/blob/master/document/012_hiresfix2.png?raw=true)
 
-- Hires.fix ON with Zoom 1.2
+- Hires.fix ON with Zoom 1.2  
   ![Hiresfix3](https://github.com/pizzarous/kinshi-visions/blob/master/document/012_hiresfix3.png?raw=true)
 
-- Hires.fix OFF
+- Hires.fix OFF  
   ![Hiresfix4](https://github.com/pizzarous/kinshi-visions/blob/master/document/012_hiresfix4.png?raw=true)
 
 ---
