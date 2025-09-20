@@ -493,7 +493,7 @@ func (b *botImpl) processInvisionCommand(s *discordgo.Session, i *discordgo.Inte
 	var queueError error
 	var prompt string
 	negative := ""
-	sampler := "Euler a"
+	sampler := "DPM++ 2M"
 	hiresfix := false
 
 	if option, ok := optionMap["prompt"]; ok {
