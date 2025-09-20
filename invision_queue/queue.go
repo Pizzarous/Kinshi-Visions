@@ -562,9 +562,7 @@ func extractPixelFromPrompt(prompt string, defaultXYValue int) (*pixelSpecifiedR
 	}, nil
 }
 
-const defaultNegative = "ugly, tiling, poorly drawn hands, poorly drawn feet, poorly drawn face, out of frame, " +
-	"mutation, mutated, extra limbs, extra legs, extra arms, disfigured, deformed, cross-eye, " +
-	"body out of frame, blurry, bad art, bad anatomy, blurred, text, watermark, grainy"
+const defaultNegative = "(verybadimagenegative_v1.3, ng_deepnegative_v1_75t, (ugly face:0.8),cross-eyed,sketches, (worst quality:2), (low quality:2), (normal quality:2), lowres, normal quality, ((monochrome)), ((grayscale)), skin spots, acnes, skin blemishes, bad anatomy, DeepNegative, facing away, tilted head, {Multiple people}, lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worstquality, low quality, normal quality, jpegartifacts, signature, watermark, username, blurry, bad feet, cropped, poorly drawn hands, poorly drawn face, mutation, deformed, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, extra fingers, fewer digits, extra limbs, extra arms,extra legs, malformed limbs, fused fingers, too many fingers, long neck, cross-eyed,mutated hands, polar lowres, bad body, bad proportions, gross proportions, text, error, missing fingers, missing arms, missing legs, extra digit, extra arms, extra leg, extra foot, ((repeating hair))"
 
 func (q *queueImpl) processCurrentInvision() {
 	go func() {
@@ -607,7 +605,7 @@ func (q *queueImpl) processCurrentInvision() {
 		// add optional parameter: sampler
 		samplerName1 := ""
 		if q.currentInvision.SamplerName1 == "" {
-			samplerName1 = "Euler a"
+			samplerName1 = "DPM++ 2M"
 		} else {
 			samplerName1 = q.currentInvision.SamplerName1
 		}
