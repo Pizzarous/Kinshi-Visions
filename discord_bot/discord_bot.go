@@ -416,6 +416,22 @@ func (b *botImpl) addInvisionCommand() error {
 					},
 				},
 			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "restore_faces",
+				Description: "run face restoration post-processing. default=No",
+				Required:    false,
+				Choices: []*discordgo.ApplicationCommandOptionChoice{
+					{
+						Name:  "Yes",
+						Value: "true",
+					},
+					{
+						Name:  "No",
+						Value: "false",
+					},
+				},
+			},
 		},
 	})
 	if err != nil {
@@ -523,6 +539,7 @@ func (b *botImpl) processInvisionCommand(s *discordgo.Session, i *discordgo.Inte
 	negative := ""
 	sampler := "DPM++ 2M"
 	hiresfix := false
+	restoreFaces := false
 
 	if option, ok := optionMap["prompt"]; ok {
 		prompt = option.StringValue()
@@ -539,12 +556,17 @@ func (b *botImpl) processInvisionCommand(s *discordgo.Session, i *discordgo.Inte
 			hiresfix, _ = strconv.ParseBool(hires.StringValue())
 		}
 
+		if rf, ok := optionMap["restore_faces"]; ok {
+			restoreFaces, _ = strconv.ParseBool(rf.StringValue())
+		}
+
 		position, queueError = b.invisionQueue.AddInvision(&invision_queue.QueueItem{
 			Prompt:             prompt,
 			NegativePrompt:     negative,
 			SamplerName1:       sampler,
 			Type:               invision_queue.ItemTypeInvision,
 			UseHiresFix:        hiresfix,
+			RestoreFaces:       restoreFaces,
 			DiscordInteraction: i.Interaction,
 		})
 		if queueError != nil {
