@@ -80,7 +80,6 @@ func New(cfg Config) (Bot, error) {
 	bot := &botImpl{
 		developmentMode:    cfg.DevelopmentMode,
 		botSession:         botSession,
-		guildID:            cfg.GuildID,
 		invisionQueue:      cfg.InvisionQueue,
 		registeredCommands: make([]*discordgo.ApplicationCommand, 0),
 		invisionCommand:    cfg.InvisionCommand,
