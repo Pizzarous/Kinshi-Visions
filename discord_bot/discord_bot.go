@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"kinshi_vision_bot/entities"
-	"kinshi_vision_bot/invision_queue"
+	"kinshi_vision_bot/canvas_queue"
 	"log"
 	"strconv"
 	"strings"
@@ -16,9 +16,9 @@ type botImpl struct {
 	developmentMode    bool
 	botSession         *discordgo.Session
 	guildID            string
-	invisionQueue      invision_queue.Queue
+	canvasQueue        canvas_queue.Queue
 	registeredCommands []*discordgo.ApplicationCommand
-	invisionCommand    string
+	canvasCommand      string
 	removeCommands     bool
 }
 
@@ -26,25 +26,25 @@ type Config struct {
 	DevelopmentMode bool
 	BotToken        string
 	GuildID         string
-	InvisionQueue   invision_queue.Queue
-	InvisionCommand string
+	CanvasQueue   canvas_queue.Queue
+	CanvasCommand string
 	RemoveCommands  bool
 }
 
-func (b *botImpl) invisionCommandString() string {
+func (b *botImpl) canvasCommandString() string {
 	if b.developmentMode {
-		return "dev_" + b.invisionCommand
+		return "dev_" + b.canvasCommand
 	}
 
-	return b.invisionCommand
+	return b.canvasCommand
 }
 
-func (b *botImpl) invisionSettingsCommandString() string {
+func (b *botImpl) canvasSettingsCommandString() string {
 	if b.developmentMode {
-		return "dev_" + b.invisionCommand + "_settings"
+		return "dev_" + b.canvasCommand + "_settings"
 	}
 
-	return b.invisionCommand + "_settings"
+	return b.canvasCommand + "_settings"
 }
 
 func New(cfg Config) (Bot, error) {
@@ -56,12 +56,12 @@ func New(cfg Config) (Bot, error) {
 		return nil, errors.New("missing guild ID")
 	}
 
-	if cfg.InvisionQueue == nil {
-		return nil, errors.New("missing invision queue")
+	if cfg.CanvasQueue == nil {
+		return nil, errors.New("missing canvas queue")
 	}
 
-	if cfg.InvisionCommand == "" {
-		return nil, errors.New("missing invision command")
+	if cfg.CanvasCommand == "" {
+		return nil, errors.New("missing canvas command")
 	}
 
 	botSession, err := discordgo.New("Bot " + cfg.BotToken)
@@ -80,9 +80,9 @@ func New(cfg Config) (Bot, error) {
 	bot := &botImpl{
 		developmentMode:    cfg.DevelopmentMode,
 		botSession:         botSession,
-		invisionQueue:      cfg.InvisionQueue,
+		canvasQueue:        cfg.CanvasQueue,
 		registeredCommands: make([]*discordgo.ApplicationCommand, 0),
-		invisionCommand:    cfg.InvisionCommand,
+		canvasCommand:      cfg.CanvasCommand,
 		removeCommands:     cfg.RemoveCommands,
 	}
 
@@ -90,12 +90,12 @@ func New(cfg Config) (Bot, error) {
 		log.Printf("Warning: could not clean up stale commands (bot may need applications.commands scope): %v", err)
 	}
 
-	err = bot.addInvisionCommand()
+	err = bot.addCanvasCommand()
 	if err != nil {
 		return nil, err
 	}
 
-	err = bot.addInvisionSettingsCommand()
+	err = bot.addCanvasSettingsCommand()
 	if err != nil {
 		return nil, err
 	}
@@ -104,19 +104,19 @@ func New(cfg Config) (Bot, error) {
 		switch i.Type {
 		case discordgo.InteractionApplicationCommand:
 			switch i.ApplicationCommandData().Name {
-			case bot.invisionCommandString():
-				bot.processInvisionCommand(s, i)
-			case bot.invisionSettingsCommandString():
-				bot.processInvisionSettingsCommand(s, i)
+			case bot.canvasCommandString():
+				bot.processCanvasCommand(s, i)
+			case bot.canvasSettingsCommandString():
+				bot.processCanvasSettingsCommand(s, i)
 			default:
 				log.Printf("Unknown command '%v'", i.ApplicationCommandData().Name)
 			}
 		case discordgo.InteractionMessageComponent:
 			switch customID := i.MessageComponentData().CustomID; {
-			case customID == "invision_reroll":
-				bot.processInvisionReroll(s, i)
-			case strings.HasPrefix(customID, "invision_upscale_"):
-				interactionIndex := strings.TrimPrefix(customID, "invision_upscale_")
+			case customID == "canvas_reroll":
+				bot.processCanvasReroll(s, i)
+			case strings.HasPrefix(customID, "canvas_upscale_"):
+				interactionIndex := strings.TrimPrefix(customID, "canvas_upscale_")
 
 				interactionIndexInt, intErr := strconv.Atoi(interactionIndex)
 				if intErr != nil {
@@ -125,9 +125,9 @@ func New(cfg Config) (Bot, error) {
 					return
 				}
 
-				bot.processInvisionUpscale(s, i, interactionIndexInt)
-			case strings.HasPrefix(customID, "invision_variation_"):
-				interactionIndex := strings.TrimPrefix(customID, "invision_variation_")
+				bot.processCanvasUpscale(s, i, interactionIndexInt)
+			case strings.HasPrefix(customID, "canvas_variation_"):
+				interactionIndex := strings.TrimPrefix(customID, "canvas_variation_")
 
 				interactionIndexInt, intErr := strconv.Atoi(interactionIndex)
 				if intErr != nil {
@@ -136,10 +136,10 @@ func New(cfg Config) (Bot, error) {
 					return
 				}
 
-				bot.processInvisionVariation(s, i, interactionIndexInt)
-			case customID == "invision_dimension_setting_menu":
+				bot.processCanvasVariation(s, i, interactionIndexInt)
+			case customID == "canvas_dimension_setting_menu":
 				if len(i.MessageComponentData().Values) == 0 {
-					log.Printf("No values for invision dimension setting menu")
+					log.Printf("No values for canvas dimension setting menu")
 
 					return
 				}
@@ -163,12 +163,12 @@ func New(cfg Config) (Bot, error) {
 					return
 				}
 
-				bot.processInvisionDimensionSetting(s, i, widthInt, heightInt)
+				bot.processCanvasDimensionSetting(s, i, widthInt, heightInt)
 
 			// patch from upstream
-			case customID == "invision_batch_count_setting_menu":
+			case customID == "canvas_batch_count_setting_menu":
 				if len(i.MessageComponentData().Values) == 0 {
-					log.Printf("No values for invision batch count setting menu")
+					log.Printf("No values for canvas batch count setting menu")
 
 					return
 				}
@@ -198,10 +198,10 @@ func New(cfg Config) (Bot, error) {
 					return
 				}
 
-				bot.processInvisionBatchSetting(s, i, batchCountInt, batchSizeInt)
-			case customID == "invision_batch_size_setting_menu":
+				bot.processCanvasBatchSetting(s, i, batchCountInt, batchSizeInt)
+			case customID == "canvas_batch_size_setting_menu":
 				if len(i.MessageComponentData().Values) == 0 {
-					log.Printf("No values for invision batch count setting menu")
+					log.Printf("No values for canvas batch count setting menu")
 
 					return
 				}
@@ -231,7 +231,7 @@ func New(cfg Config) (Bot, error) {
 					return
 				}
 
-				bot.processInvisionBatchSetting(s, i, batchCountInt, batchSizeInt)
+				bot.processCanvasBatchSetting(s, i, batchCountInt, batchSizeInt)
 
 			default:
 				log.Printf("Unknown message component '%v'", i.MessageComponentData().CustomID)
@@ -243,7 +243,7 @@ func New(cfg Config) (Bot, error) {
 }
 
 func (b *botImpl) Start() {
-	b.invisionQueue.StartPolling(b.botSession)
+	b.canvasQueue.StartPolling(b.botSession)
 
 	err := b.teardown()
 	if err != nil {
@@ -276,8 +276,8 @@ func (b *botImpl) cleanupStaleCommands() error {
 	}
 
 	keep := map[string]bool{
-		b.invisionCommandString():         true,
-		b.invisionSettingsCommandString(): true,
+		b.canvasCommandString():         true,
+		b.canvasSettingsCommandString(): true,
 	}
 
 	for _, cmd := range existing {
@@ -293,17 +293,17 @@ func (b *botImpl) cleanupStaleCommands() error {
 	return nil
 }
 
-func (b *botImpl) addInvisionCommand() error {
-	log.Printf("Adding command '%s'...", b.invisionCommandString())
+func (b *botImpl) addCanvasCommand() error {
+	log.Printf("Adding command '%s'...", b.canvasCommandString())
 
 	cmd, err := b.botSession.ApplicationCommandCreate(b.botSession.State.User.ID, b.guildID, &discordgo.ApplicationCommand{
-		Name:        b.invisionCommandString(),
-		Description: "Ask the bot to invision something",
+		Name:        b.canvasCommandString(),
+		Description: "Ask Maëlle to paint something",
 		Options: []*discordgo.ApplicationCommandOption{
 			{
 				Type:        discordgo.ApplicationCommandOptionString,
 				Name:        "prompt",
-				Description: "The text prompt to invision",
+				Description: "The text prompt to paint",
 				Required:    true,
 			},
 			{
@@ -435,7 +435,7 @@ func (b *botImpl) addInvisionCommand() error {
 		},
 	})
 	if err != nil {
-		log.Printf("Error creating '%s' command: %v", b.invisionCommandString(), err)
+		log.Printf("Error creating '%s' command: %v", b.canvasCommandString(), err)
 
 		return err
 	}
@@ -445,15 +445,15 @@ func (b *botImpl) addInvisionCommand() error {
 	return nil
 }
 
-func (b *botImpl) addInvisionSettingsCommand() error {
-	log.Printf("Adding command '%s'...", b.invisionSettingsCommandString())
+func (b *botImpl) addCanvasSettingsCommand() error {
+	log.Printf("Adding command '%s'...", b.canvasSettingsCommandString())
 
 	cmd, err := b.botSession.ApplicationCommandCreate(b.botSession.State.User.ID, b.guildID, &discordgo.ApplicationCommand{
-		Name:        b.invisionSettingsCommandString(),
-		Description: "Change the default settings for the invision command",
+		Name:        b.canvasSettingsCommandString(),
+		Description: "Change the default settings for the canvas command",
 	})
 	if err != nil {
-		log.Printf("Error creating '%s' command: %v", b.invisionSettingsCommandString(), err)
+		log.Printf("Error creating '%s' command: %v", b.canvasSettingsCommandString(), err)
 
 		return err
 	}
@@ -463,19 +463,19 @@ func (b *botImpl) addInvisionSettingsCommand() error {
 	return nil
 }
 
-func (b *botImpl) processInvisionReroll(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	position, queueError := b.invisionQueue.AddInvision(&invision_queue.QueueItem{
-		Type:               invision_queue.ItemTypeReroll,
+func (b *botImpl) processCanvasReroll(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	position, queueError := b.canvasQueue.AddCanvas(&canvas_queue.QueueItem{
+		Type:               canvas_queue.ItemTypeReroll,
 		DiscordInteraction: i.Interaction,
 	})
 	if queueError != nil {
-		log.Printf("Error adding invision to queue: %v\n", queueError)
+		log.Printf("Error adding to canvas queue: %v\n", queueError)
 	}
 
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("I'm reimagining that for you... You are currently #%d in line.", position),
+			Content: fmt.Sprintf("My brush finds new paths... You are #%d in the queue.", position),
 		},
 	})
 	if err != nil {
@@ -483,20 +483,20 @@ func (b *botImpl) processInvisionReroll(s *discordgo.Session, i *discordgo.Inter
 	}
 }
 
-func (b *botImpl) processInvisionUpscale(s *discordgo.Session, i *discordgo.InteractionCreate, upscaleIndex int) {
-	position, queueError := b.invisionQueue.AddInvision(&invision_queue.QueueItem{
-		Type:               invision_queue.ItemTypeUpscale,
+func (b *botImpl) processCanvasUpscale(s *discordgo.Session, i *discordgo.InteractionCreate, upscaleIndex int) {
+	position, queueError := b.canvasQueue.AddCanvas(&canvas_queue.QueueItem{
+		Type:               canvas_queue.ItemTypeUpscale,
 		InteractionIndex:   upscaleIndex,
 		DiscordInteraction: i.Interaction,
 	})
 	if queueError != nil {
-		log.Printf("Error adding invision to queue: %v\n", queueError)
+		log.Printf("Error adding to canvas queue: %v\n", queueError)
 	}
 
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("I'm upscaling that for you... You are currently #%d in line.", position),
+			Content: fmt.Sprintf("I'll bring more detail to the canvas... You are #%d in the queue.", position),
 		},
 	})
 	if err != nil {
@@ -504,20 +504,20 @@ func (b *botImpl) processInvisionUpscale(s *discordgo.Session, i *discordgo.Inte
 	}
 }
 
-func (b *botImpl) processInvisionVariation(s *discordgo.Session, i *discordgo.InteractionCreate, variationIndex int) {
-	position, queueError := b.invisionQueue.AddInvision(&invision_queue.QueueItem{
-		Type:               invision_queue.ItemTypeVariation,
+func (b *botImpl) processCanvasVariation(s *discordgo.Session, i *discordgo.InteractionCreate, variationIndex int) {
+	position, queueError := b.canvasQueue.AddCanvas(&canvas_queue.QueueItem{
+		Type:               canvas_queue.ItemTypeVariation,
 		InteractionIndex:   variationIndex,
 		DiscordInteraction: i.Interaction,
 	})
 	if queueError != nil {
-		log.Printf("Error adding invision to queue: %v\n", queueError)
+		log.Printf("Error adding to canvas queue: %v\n", queueError)
 	}
 
 	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("I'm imagining more variations for you... You are currently #%d in line.", position),
+			Content: fmt.Sprintf("Let me explore other strokes of this vision... You are #%d in the queue.", position),
 		},
 	})
 	if err != nil {
@@ -525,7 +525,7 @@ func (b *botImpl) processInvisionVariation(s *discordgo.Session, i *discordgo.In
 	}
 }
 
-func (b *botImpl) processInvisionCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+func (b *botImpl) processCanvasCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	options := i.ApplicationCommandData().Options
 
 	optionMap := make(map[string]*discordgo.ApplicationCommandInteractionDataOption, len(options))
@@ -560,17 +560,17 @@ func (b *botImpl) processInvisionCommand(s *discordgo.Session, i *discordgo.Inte
 			restoreFaces, _ = strconv.ParseBool(rf.StringValue())
 		}
 
-		position, queueError = b.invisionQueue.AddInvision(&invision_queue.QueueItem{
+		position, queueError = b.canvasQueue.AddCanvas(&canvas_queue.QueueItem{
 			Prompt:             prompt,
 			NegativePrompt:     negative,
 			SamplerName1:       sampler,
-			Type:               invision_queue.ItemTypeInvision,
+			Type:               canvas_queue.ItemTypeCanvas,
 			UseHiresFix:        hiresfix,
 			RestoreFaces:       restoreFaces,
 			DiscordInteraction: i.Interaction,
 		})
 		if queueError != nil {
-			log.Printf("Error adding invision to queue: %v\n", queueError)
+			log.Printf("Error adding to canvas queue: %v\n", queueError)
 		}
 	}
 
@@ -578,11 +578,10 @@ func (b *botImpl) processInvisionCommand(s *discordgo.Session, i *discordgo.Inte
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: fmt.Sprintf(
-				"I'm dreaming something up for you. You are currently #%d in line.\n<@%s> asked me to invision \"%s\", with sampler: %s",
+				"My brush is ready... You are #%d in the queue.\n<@%s> asked me to paint \"%s\".",
 				position,
 				i.Member.User.ID,
-				prompt,
-				sampler),
+				prompt),
 		},
 	})
 	if err != nil {
@@ -598,7 +597,7 @@ func settingsMessageComponents(settings *entities.DefaultSettings) []discordgo.M
 		discordgo.ActionsRow{
 			Components: []discordgo.MessageComponent{
 				discordgo.SelectMenu{
-					CustomID:  "invision_dimension_setting_menu",
+					CustomID:  "canvas_dimension_setting_menu",
 					MinValues: &minValues,
 					MaxValues: 1,
 					Options: []discordgo.SelectMenuOption{
@@ -619,7 +618,7 @@ func settingsMessageComponents(settings *entities.DefaultSettings) []discordgo.M
 		discordgo.ActionsRow{
 			Components: []discordgo.MessageComponent{
 				discordgo.SelectMenu{
-					CustomID:  "invision_batch_count_setting_menu",
+					CustomID:  "canvas_batch_count_setting_menu",
 					MinValues: &minValues,
 					MaxValues: 1,
 					Options: []discordgo.SelectMenuOption{
@@ -645,7 +644,7 @@ func settingsMessageComponents(settings *entities.DefaultSettings) []discordgo.M
 		discordgo.ActionsRow{
 			Components: []discordgo.MessageComponent{
 				discordgo.SelectMenu{
-					CustomID:  "invision_batch_size_setting_menu",
+					CustomID:  "canvas_batch_size_setting_menu",
 					MinValues: &minValues,
 					MaxValues: 1,
 					Options: []discordgo.SelectMenuOption{
@@ -671,8 +670,8 @@ func settingsMessageComponents(settings *entities.DefaultSettings) []discordgo.M
 	}
 }
 
-func (b *botImpl) processInvisionSettingsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	botSettings, err := b.invisionQueue.GetBotDefaultSettings()
+func (b *botImpl) processCanvasSettingsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	botSettings, err := b.canvasQueue.GetBotDefaultSettings()
 	if err != nil {
 		log.Printf("error getting default settings for settings command: %v", err)
 
@@ -685,7 +684,7 @@ func (b *botImpl) processInvisionSettingsCommand(s *discordgo.Session, i *discor
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Title:      "Settings",
-			Content:    "Choose defaults settings for the invision command:",
+			Content:    "Choose defaults settings for the canvas command:",
 			Components: messageComponents,
 		},
 	})
@@ -694,8 +693,8 @@ func (b *botImpl) processInvisionSettingsCommand(s *discordgo.Session, i *discor
 	}
 }
 
-func (b *botImpl) processInvisionDimensionSetting(s *discordgo.Session, i *discordgo.InteractionCreate, height, width int) {
-	botSettings, err := b.invisionQueue.UpdateDefaultDimensions(width, height)
+func (b *botImpl) processCanvasDimensionSetting(s *discordgo.Session, i *discordgo.InteractionCreate, height, width int) {
+	botSettings, err := b.canvasQueue.UpdateDefaultDimensions(width, height)
 	if err != nil {
 		log.Printf("error updating default dimensions: %v", err)
 
@@ -717,7 +716,7 @@ func (b *botImpl) processInvisionDimensionSetting(s *discordgo.Session, i *disco
 	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
-			Content:    "Choose defaults settings for the invision command:",
+			Content:    "Choose defaults settings for the canvas command:",
 			Components: messageComponents,
 		},
 	})
@@ -726,8 +725,8 @@ func (b *botImpl) processInvisionDimensionSetting(s *discordgo.Session, i *disco
 	}
 }
 
-func (b *botImpl) processInvisionBatchSetting(s *discordgo.Session, i *discordgo.InteractionCreate, batchCount, batchSize int) {
-	botSettings, err := b.invisionQueue.UpdateDefaultBatch(batchCount, batchSize)
+func (b *botImpl) processCanvasBatchSetting(s *discordgo.Session, i *discordgo.InteractionCreate, batchCount, batchSize int) {
+	botSettings, err := b.canvasQueue.UpdateDefaultBatch(batchCount, batchSize)
 	if err != nil {
 		log.Printf("error updating batch settings: %v", err)
 
@@ -749,7 +748,7 @@ func (b *botImpl) processInvisionBatchSetting(s *discordgo.Session, i *discordgo
 	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
-			Content:    "Choose defaults settings for the invision command:",
+			Content:    "Choose defaults settings for the canvas command:",
 			Components: messageComponents,
 		},
 	})
