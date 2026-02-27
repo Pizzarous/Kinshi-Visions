@@ -3,7 +3,7 @@ module kinshi_vision_bot
 go 1.19
 
 require (
-	github.com/bwmarrin/discordgo v0.26.1
+	github.com/bwmarrin/discordgo v0.29.0
 	modernc.org/sqlite v1.20.1
 )
 
