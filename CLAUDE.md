@@ -17,7 +17,7 @@ go build
 
 # Run with flags
 ./kinshi_vision_bot -dev                        # Development mode (commands prefixed with "dev_")
-./kinshi_vision_bot -invision <command_name>    # Override the slash command name
+./kinshi_vision_bot -canvas <command_name>      # Override the slash command name
 ./kinshi_vision_bot -remove                     # Delete all registered commands on exit
 ```
 
@@ -37,7 +37,7 @@ The application follows a layered architecture with interface-based dependency i
 ```
 Discord Events (discordgo)
     → discord_bot/          — Slash command handling, button interactions
-    → invision_queue/       — Async request queue, processes generations
+    → canvas_queue/         — Async request queue, processes generations
     → stable_diffusion_api/ — HTTP client for the Automatic1111 API
     → repositories/         — Data access (image_generations, default_settings)
     → databases/sqlite/     — SQLite with sequential auto-migrations
@@ -46,7 +46,7 @@ Discord Events (discordgo)
 **Initialization order in `main.go`:** SD API client → SQLite DB (auto-migrates) → repositories → queue → Discord bot → `bot.Start()` (blocks until Ctrl+C).
 
 **Key packages:**
-- `invision_queue/queue.go` (~1282 lines) — core generation logic: queues requests, polls SD API progress, builds responses, handles variations/upscale/reroll
+- `canvas_queue/queue.go` (~1282 lines) — core generation logic: queues requests, polls SD API progress, builds responses, handles variations/upscale/reroll
 - `discord_bot/discord_bot.go` (~710 lines) — registers slash commands, dispatches interaction events to the queue
 - `stable_diffusion_api/` — thin HTTP wrapper for `/sdapi/v1/txt2img`, `/sdapi/v1/upscaler`, and progress endpoints
 - `composite_renderer/` — assembles individual generated images into a 2×2 grid for Discord display
@@ -56,7 +56,7 @@ Discord Events (discordgo)
 
 ## Prompt Parameters
 
-Parameters parsed from the prompt string in `invision_queue/queue.go`:
+Parameters parsed from the prompt string in `canvas_queue/queue.go`:
 - `--ar <w>:<h>` — aspect ratio
 - `--step <n>` — sampling steps
 - `--cfgscale <f>` — CFG scale

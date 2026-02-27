@@ -5,7 +5,7 @@ import (
 	"flag"
 	"kinshi_vision_bot/databases/sqlite"
 	"kinshi_vision_bot/discord_bot"
-	"kinshi_vision_bot/invision_queue"
+	"kinshi_vision_bot/canvas_queue"
 	"kinshi_vision_bot/repositories/default_settings"
 	"kinshi_vision_bot/repositories/image_generations"
 	"kinshi_vision_bot/stable_diffusion_api"
@@ -26,7 +26,7 @@ func getEnvVar(key, defaultValue string) string {
 }
 
 var (
-	invisionCommand    = flag.String("invision", "invision", "Invision command name. Default is \"invision\"")
+	canvasCommand      = flag.String("canvas", "canvas", "Canvas command name. Default is \"canvas\"")
 	removeCommandsFlag = flag.Bool("remove", false, "Delete all commands when bot exits")
 	devModeFlag        = flag.Bool("dev", false, "Start in development mode, using \"dev_\" prefixed commands instead")
 )
@@ -64,8 +64,8 @@ func main() {
 		log.Fatal("API host is required")
 	}
 
-	if invisionCommand == nil || *invisionCommand == "" {
-		log.Fatalf("Invision command flag is required")
+	if canvasCommand == nil || *canvasCommand == "" {
+		log.Fatalf("Canvas command flag is required")
 	}
 
 	devMode := false
@@ -106,22 +106,22 @@ func main() {
 		log.Fatalf("Failed to create default settings repository: %v", err)
 	}
 
-	invisionQueue, err := invision_queue.New(invision_queue.Config{
+	canvasQueue, err := canvas_queue.New(canvas_queue.Config{
 		StableDiffusionAPI:  stableDiffusionAPI,
 		ImageGenerationRepo: generationRepo,
 		DefaultSettingsRepo: defaultSettingsRepo,
 		BlockedKeywords:     blockedKeywords,
 	})
 	if err != nil {
-		log.Fatalf("Failed to create invision queue: %v", err)
+		log.Fatalf("Failed to create canvas queue: %v", err)
 	}
 
 	bot, err := discord_bot.New(discord_bot.Config{
 		DevelopmentMode: devMode,
 		BotToken:        botToken,
 		GuildID:         guildID,
-		InvisionQueue:   invisionQueue,
-		InvisionCommand: *invisionCommand,
+		CanvasQueue:     canvasQueue,
+		CanvasCommand:   *canvasCommand,
 		RemoveCommands:  removeCommands,
 	})
 	if err != nil {

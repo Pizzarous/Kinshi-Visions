@@ -1,4 +1,4 @@
-package invision_queue
+package canvas_queue
 
 import (
 	"bytes"
@@ -38,7 +38,7 @@ type queueImpl struct {
 	botSession          *discordgo.Session
 	stableDiffusionAPI  stable_diffusion_api.StableDiffusionAPI
 	queue               chan *QueueItem
-	currentInvision     *QueueItem
+	currentCanvas       *QueueItem
 	mu                  sync.Mutex
 	imageGenerationRepo image_generations.Repository
 	compositeRenderer   composite_renderer.Renderer
@@ -85,7 +85,7 @@ func New(cfg Config) (Queue, error) {
 type ItemType int
 
 const (
-	ItemTypeInvision ItemType = iota
+	ItemTypeCanvas ItemType = iota
 	ItemTypeReroll
 	ItemTypeUpscale
 	ItemTypeVariation
@@ -102,7 +102,7 @@ type QueueItem struct {
 	DiscordInteraction *discordgo.Interaction
 }
 
-func (q *queueImpl) AddInvision(item *QueueItem) (int, error) {
+func (q *queueImpl) AddCanvas(item *QueueItem) (int, error) {
 	q.queue <- item
 
 	linePosition := len(q.queue)
@@ -134,7 +134,7 @@ func (q *queueImpl) StartPolling(botSession *discordgo.Session) {
 		case <-stop:
 			stopPolling = true
 		case <-time.After(1 * time.Second):
-			if q.currentInvision == nil {
+			if q.currentCanvas == nil {
 				q.pullNextInQueue()
 			}
 		}
@@ -154,9 +154,9 @@ func (q *queueImpl) pullNextInQueue() {
 		q.mu.Lock()
 		defer q.mu.Unlock()
 
-		q.currentInvision = element
+		q.currentCanvas = element
 
-		q.processCurrentInvision()
+		q.processCurrentCanvas()
 	}
 }
 
@@ -566,17 +566,17 @@ func extractPixelFromPrompt(prompt string, defaultXYValue int) (*pixelSpecifiedR
 	}, nil
 }
 
-func (q *queueImpl) processCurrentInvision() {
+func (q *queueImpl) processCurrentCanvas() {
 	go func() {
 		defer func() {
 			q.mu.Lock()
 			defer q.mu.Unlock()
 
-			q.currentInvision = nil
+			q.currentCanvas = nil
 		}()
 
-		if q.currentInvision.Type == ItemTypeUpscale {
-			q.processUpscaleInvision(q.currentInvision)
+		if q.currentCanvas.Type == ItemTypeUpscale {
+			q.processUpscaleCanvas(q.currentCanvas)
 
 			return
 		}
@@ -603,25 +603,25 @@ func (q *queueImpl) processCurrentInvision() {
 			}
 			return strings.TrimSpace(s)
 		}
-		q.currentInvision.Prompt = scrubText(q.currentInvision.Prompt)
-		q.currentInvision.NegativePrompt = scrubText(q.currentInvision.NegativePrompt)
+		q.currentCanvas.Prompt = scrubText(q.currentCanvas.Prompt)
+		q.currentCanvas.NegativePrompt = scrubText(q.currentCanvas.NegativePrompt)
 
 		// add optional parameter: Negative prompt — always prepend safety terms
 		safetyNegative := strings.Join(q.blockedKeywords, ", ")
 		negativePrompt := safetyNegative
-		if q.currentInvision.NegativePrompt != "" {
-			negativePrompt = safetyNegative + ", " + q.currentInvision.NegativePrompt
+		if q.currentCanvas.NegativePrompt != "" {
+			negativePrompt = safetyNegative + ", " + q.currentCanvas.NegativePrompt
 		}
 
 		// add optional parameter: sampler
 		samplerName1 := ""
-		if q.currentInvision.SamplerName1 == "" {
+		if q.currentCanvas.SamplerName1 == "" {
 			samplerName1 = "DPM++ 2M"
 		} else {
-			samplerName1 = q.currentInvision.SamplerName1
+			samplerName1 = q.currentCanvas.SamplerName1
 		}
 
-		promptRes, err := extractDimensionsFromPrompt(q.currentInvision.Prompt, defaultWidth, defaultHeight)
+		promptRes, err := extractDimensionsFromPrompt(q.currentCanvas.Prompt, defaultWidth, defaultHeight)
 		if err != nil {
 			log.Printf("Error extracting dimensions from prompt: %v", err)
 
@@ -664,7 +664,7 @@ func (q *queueImpl) processCurrentInvision() {
 			return
 		}
 
-		enableHR1 = q.currentInvision.UseHiresFix
+		enableHR1 = q.currentCanvas.UseHiresFix
 		if enableHR1 {
 			upscaleRate1 = promptResZ.ZoomScale
 			upscalerName1 = "Latent"
@@ -713,7 +713,7 @@ func (q *queueImpl) processCurrentInvision() {
 			NegativePrompt:    negativePrompt,
 			Width:             scaledWidth,
 			Height:            scaledHeight,
-			RestoreFaces:      q.currentInvision.RestoreFaces,
+			RestoreFaces:      q.currentCanvas.RestoreFaces,
 			EnableHR:          enableHR1,
 			HRUpscaleRate:     upscaleRate1,
 			HRUpscaler:        upscalerName1,
@@ -729,8 +729,8 @@ func (q *queueImpl) processCurrentInvision() {
 			Processed:         false,
 		}
 
-		if q.currentInvision.Type == ItemTypeReroll || q.currentInvision.Type == ItemTypeVariation {
-			foundGeneration, err := q.getPreviousGeneration(q.currentInvision, q.currentInvision.InteractionIndex)
+		if q.currentCanvas.Type == ItemTypeReroll || q.currentCanvas.Type == ItemTypeVariation {
+			foundGeneration, err := q.getPreviousGeneration(q.currentCanvas, q.currentCanvas.InteractionIndex)
 			if err != nil {
 				log.Printf("Error getting prompt for reroll: %v", err)
 
@@ -744,26 +744,26 @@ func (q *queueImpl) processCurrentInvision() {
 			newGeneration.Subseed = -1
 
 			// for variations, the subseed strength determines how much variation we get
-			if q.currentInvision.Type == ItemTypeVariation {
+			if q.currentCanvas.Type == ItemTypeVariation {
 				newGeneration.SubseedStrength = 0.15
 			}
 		}
 
-		err = q.processInvisionGrid(newGeneration, q.currentInvision)
+		err = q.processCanvasGrid(newGeneration, q.currentCanvas)
 		if err != nil {
-			log.Printf("Error processing invision grid: %v", err)
+			log.Printf("Error processing canvas grid: %v", err)
 
 			return
 		}
 	}()
 }
 
-func (q *queueImpl) getPreviousGeneration(invision *QueueItem, sortOrder int) (*entities.ImageGeneration, error) {
-	interactionID := invision.DiscordInteraction.ID
+func (q *queueImpl) getPreviousGeneration(canvas *QueueItem, sortOrder int) (*entities.ImageGeneration, error) {
+	interactionID := canvas.DiscordInteraction.ID
 	messageID := ""
 
-	if invision.DiscordInteraction.Message != nil {
-		messageID = invision.DiscordInteraction.Message.ID
+	if canvas.DiscordInteraction.Message != nil {
+		messageID = canvas.DiscordInteraction.Message.ID
 	}
 
 	log.Printf("Reimagining interaction: %v, Message: %v", interactionID, messageID)
@@ -780,9 +780,9 @@ func (q *queueImpl) getPreviousGeneration(invision *QueueItem, sortOrder int) (*
 	return generation, nil
 }
 
-func invisionMessageContent(generation *entities.ImageGeneration, user *discordgo.User, progress float64) string {
+func canvasMessageContent(generation *entities.ImageGeneration, user *discordgo.User, progress float64) string {
 	if progress >= 0 && progress < 1 {
-		return fmt.Sprintf("<@%s> asked me to invision \"%s\". Currently dreaming it up for them. Progress: %.0f%%",
+		return fmt.Sprintf("<@%s> asked me to paint \"%s\". My brushstrokes are taking shape... %.0f%%",
 			user.ID, generation.Prompt, progress*100)
 	} else {
 		seedString := fmt.Sprintf("%d", generation.Seed)
@@ -801,7 +801,7 @@ func invisionMessageContent(generation *entities.ImageGeneration, user *discordg
 				generation.Width,
 				generation.Height)
 		}
-		return fmt.Sprintf("<@%s> asked me to invision \"%s\" at step %d cfgscale %s seed %s with sampler %s. resolution: %s. here is what I invisiond for them.",
+		return fmt.Sprintf("<@%s> asked me to paint \"%s\". step %d · cfgscale %s · seed %s · sampler %s · %s. Here is what I painted for them.",
 			user.ID,
 			generation.Prompt,
 			generation.Steps,
@@ -813,12 +813,12 @@ func invisionMessageContent(generation *entities.ImageGeneration, user *discordg
 	}
 }
 
-func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration, invision *QueueItem) error {
-	log.Printf("Processing invision #%s: %v\n", invision.DiscordInteraction.ID, newGeneration.Prompt)
+func (q *queueImpl) processCanvasGrid(newGeneration *entities.ImageGeneration, canvas *QueueItem) error {
+	log.Printf("Processing canvas #%s: %v\n", canvas.DiscordInteraction.ID, newGeneration.Prompt)
 
-	newContent := invisionMessageContent(newGeneration, invision.DiscordInteraction.Member.User, 0)
+	newContent := canvasMessageContent(newGeneration, canvas.DiscordInteraction.Member.User, 0)
 
-	message, err := q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
+	message, err := q.botSession.InteractionResponseEdit(canvas.DiscordInteraction, &discordgo.WebhookEdit{
 		Content: &newContent,
 	})
 	if err != nil {
@@ -839,9 +839,9 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 		return err
 	}
 
-	newGeneration.InteractionID = invision.DiscordInteraction.ID
+	newGeneration.InteractionID = canvas.DiscordInteraction.ID
 	newGeneration.MessageID = message.ID
-	newGeneration.MemberID = invision.DiscordInteraction.Member.User.ID
+	newGeneration.MemberID = canvas.DiscordInteraction.Member.User.ID
 	newGeneration.SortOrder = 0
 	newGeneration.BatchCount = defaultBatchCount
 	newGeneration.BatchSize = defaultBatchSize
@@ -871,9 +871,9 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 					continue
 				}
 
-				progressContent := invisionMessageContent(newGeneration, invision.DiscordInteraction.Member.User, progress.Progress)
+				progressContent := canvasMessageContent(newGeneration, canvas.DiscordInteraction.Member.User, progress.Progress)
 
-				_, progressErr = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
+				_, progressErr = q.botSession.InteractionResponseEdit(canvas.DiscordInteraction, &discordgo.WebhookEdit{
 					Content: &progressContent,
 				})
 				if progressErr != nil {
@@ -907,9 +907,9 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 	if err != nil {
 		log.Printf("Error processing image: %v\n", err)
 
-		errorContent := "I'm sorry, but I had a problem imagining your image."
+		errorContent := "My brushstroke faltered... I couldn't paint this one. Please try again."
 
-		_, err = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
+		_, err = q.botSession.InteractionResponseEdit(canvas.DiscordInteraction, &discordgo.WebhookEdit{
 			Content: &errorContent,
 		})
 
@@ -918,7 +918,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 
 	generationDone <- true
 
-	finishedContent := invisionMessageContent(newGeneration, invision.DiscordInteraction.Member.User, 1)
+	finishedContent := canvasMessageContent(newGeneration, canvas.DiscordInteraction.Member.User, 1)
 
 	log.Printf("Seeds: %v Subseeds:%v", resp.Seeds, resp.Subseeds)
 
@@ -976,13 +976,13 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 		return err
 	}
 
-	_, err = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
+	_, err = q.botSession.InteractionResponseEdit(canvas.DiscordInteraction, &discordgo.WebhookEdit{
 		Content: &finishedContent,
 		Files: []*discordgo.File{
 			{
 				ContentType: "image/png",
 				// append timestamp for grid image result
-				Name:   "invision_" + time.Now().Format("20060102150405") + ".png",
+				Name:   "canvas_" + time.Now().Format("20060102150405") + ".png",
 				Reader: compositeImage,
 			},
 		},
@@ -997,7 +997,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "invision_variation_1",
+						CustomID: "canvas_variation_1",
 						Emoji: &discordgo.ComponentEmoji{
 							Name: "♻️",
 						},
@@ -1010,7 +1010,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "invision_variation_2",
+						CustomID: "canvas_variation_2",
 						Emoji: &discordgo.ComponentEmoji{
 							Name: "♻️",
 						},
@@ -1023,7 +1023,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "invision_variation_3",
+						CustomID: "canvas_variation_3",
 						Emoji: &discordgo.ComponentEmoji{
 							Name: "♻️",
 						},
@@ -1036,7 +1036,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "invision_variation_4",
+						CustomID: "canvas_variation_4",
 						Emoji: &discordgo.ComponentEmoji{
 							Name: "♻️",
 						},
@@ -1049,7 +1049,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "invision_reroll",
+						CustomID: "canvas_reroll",
 						Emoji: &discordgo.ComponentEmoji{
 							Name: "🎲",
 						},
@@ -1066,7 +1066,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "invision_upscale_1",
+						CustomID: "canvas_upscale_1",
 						Emoji: &discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
@@ -1079,7 +1079,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "invision_upscale_2",
+						CustomID: "canvas_upscale_2",
 						Emoji: &discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
@@ -1092,7 +1092,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "invision_upscale_3",
+						CustomID: "canvas_upscale_3",
 						Emoji: &discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
@@ -1105,7 +1105,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						// Disabled allows bot to disable some buttons for users.
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
-						CustomID: "invision_upscale_4",
+						CustomID: "canvas_upscale_4",
 						Emoji: &discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
@@ -1126,29 +1126,29 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 func upscaleMessageContent(user *discordgo.User, fetchProgress, upscaleProgress float64) string {
 	if fetchProgress >= 0 && fetchProgress <= 1 && upscaleProgress < 1 {
 		if upscaleProgress == 0 {
-			return fmt.Sprintf("Currently upscaling the image for you... Fetch progress: %.0f%%", fetchProgress*100)
+			return fmt.Sprintf("Refining every detail on the canvas... %.0f%%", fetchProgress*100)
 		} else {
-			return fmt.Sprintf("Currently upscaling the image for you... Fetch progress: %.0f%% Upscale progress: %.0f%%",
+			return fmt.Sprintf("Refining every detail on the canvas... %.0f%% · Upscale: %.0f%%",
 				fetchProgress*100, upscaleProgress*100)
 		}
 	} else {
-		return fmt.Sprintf("<@%s> asked me to upscale their image. Here's the result:",
+		return fmt.Sprintf("<@%s> asked me to refine their painting. Here it is:",
 			user.ID)
 	}
 }
 
-func (q *queueImpl) processUpscaleInvision(invision *QueueItem) {
-	interactionID := invision.DiscordInteraction.ID
+func (q *queueImpl) processUpscaleCanvas(canvas *QueueItem) {
+	interactionID := canvas.DiscordInteraction.ID
 	messageID := ""
 
-	if invision.DiscordInteraction.Message != nil {
-		messageID = invision.DiscordInteraction.Message.ID
+	if canvas.DiscordInteraction.Message != nil {
+		messageID = canvas.DiscordInteraction.Message.ID
 	}
 
 	log.Printf("Upscaling image: %v, Message: %v, Upscale Index: %d",
-		interactionID, messageID, invision.InteractionIndex)
+		interactionID, messageID, canvas.InteractionIndex)
 
-	generation, err := q.imageGenerationRepo.GetByMessageAndSort(context.Background(), messageID, invision.InteractionIndex)
+	generation, err := q.imageGenerationRepo.GetByMessageAndSort(context.Background(), messageID, canvas.InteractionIndex)
 	if err != nil {
 		log.Printf("Error getting image generation: %v", err)
 
@@ -1157,9 +1157,9 @@ func (q *queueImpl) processUpscaleInvision(invision *QueueItem) {
 
 	log.Printf("Found generation: %v", generation)
 
-	newContent := upscaleMessageContent(invision.DiscordInteraction.Member.User, 0, 0)
+	newContent := upscaleMessageContent(canvas.DiscordInteraction.Member.User, 0, 0)
 
-	_, err = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
+	_, err = q.botSession.InteractionResponseEdit(canvas.DiscordInteraction, &discordgo.WebhookEdit{
 		Content: &newContent,
 	})
 	if err != nil {
@@ -1198,9 +1198,9 @@ func (q *queueImpl) processUpscaleInvision(invision *QueueItem) {
 
 				lastProgress = progress.Progress
 
-				progressContent := upscaleMessageContent(invision.DiscordInteraction.Member.User, fetchProgress, upscaleProgress)
+				progressContent := upscaleMessageContent(canvas.DiscordInteraction.Member.User, fetchProgress, upscaleProgress)
 
-				_, progressErr = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
+				_, progressErr = q.botSession.InteractionResponseEdit(canvas.DiscordInteraction, &discordgo.WebhookEdit{
 					Content: &progressContent,
 				})
 				if progressErr != nil {
@@ -1241,7 +1241,7 @@ func (q *queueImpl) processUpscaleInvision(invision *QueueItem) {
 
 		errorContent := "I'm sorry, but I had a problem upscaling your image."
 
-		_, err = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
+		_, err = q.botSession.InteractionResponseEdit(canvas.DiscordInteraction, &discordgo.WebhookEdit{
 			Content: &errorContent,
 		})
 
@@ -1260,19 +1260,19 @@ func (q *queueImpl) processUpscaleInvision(invision *QueueItem) {
 	imageBuf := bytes.NewBuffer(decodedImage)
 
 	log.Printf("Successfully upscaled image: %v, Message: %v, Upscale Index: %d",
-		interactionID, messageID, invision.InteractionIndex)
+		interactionID, messageID, canvas.InteractionIndex)
 
-	finishedContent := fmt.Sprintf("<@%s> asked me to upscale their image. (seed: %d) Here's the result:",
-		invision.DiscordInteraction.Member.User.ID,
+	finishedContent := fmt.Sprintf("<@%s> asked me to refine their painting. (seed: %d) Here it is:",
+		canvas.DiscordInteraction.Member.User.ID,
 		generation.Seed)
 
-	_, err = q.botSession.InteractionResponseEdit(invision.DiscordInteraction, &discordgo.WebhookEdit{
+	_, err = q.botSession.InteractionResponseEdit(canvas.DiscordInteraction, &discordgo.WebhookEdit{
 		Content: &finishedContent,
 		Files: []*discordgo.File{
 			{
 				ContentType: "image/png",
 				// add timestamp to output file
-				Name:   "invision_" + time.Now().Format("20060102150405") + ".png",
+				Name:   "canvas_" + time.Now().Format("20060102150405") + ".png",
 				Reader: imageBuf,
 			},
 		},

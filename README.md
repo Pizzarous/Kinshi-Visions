@@ -53,24 +53,24 @@ Before running the bot, configure an `.env` file to specify your bot’s details
 ### Notes
 
 - On the first run, a SQLite database file will be generated in the same directory as the bot.
-- Use the `-invision <new command name>` option to avoid conflicts with other bots.
+- Use the `-canvas <new command name>` option to avoid conflicts with other bots.
 
 ---
 
 ## Commands
 
-### `/invision_settings`
+### `/canvas_settings`
 
-Displays buttons in Discord to update default settings for the `/invision` command.  
+Displays buttons in Discord to update default settings for the `/canvas` command.
 
-![Invision Settings](https://user-images.githubusercontent.com/7525989/211077599-482536ef-1a70-4f58-abf0-314c773c64c6.png)
+![Canvas Settings](https://user-images.githubusercontent.com/7525989/211077599-482536ef-1a70-4f58-abf0-314c773c64c6.png)
 
-### `/invision`
+### `/canvas`
 
 Generates an image based on a text prompt. Example:
 
 ```bash
-/invision cute kitten riding a skateboard
+/canvas cute kitten riding a skateboard
 ```
 
 #### Options
@@ -78,7 +78,7 @@ Generates an image based on a text prompt. Example:
 - Specify Aspect Ratio:
 
   ```bash
-  /invision cute kitten --ar 16:9
+  /canvas cute kitten --ar 16:9
   ```
 
 ---

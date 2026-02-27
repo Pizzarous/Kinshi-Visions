@@ -1,4 +1,4 @@
-package invision_queue
+package canvas_queue
 
 import (
 	"kinshi_vision_bot/entities"
@@ -7,7 +7,7 @@ import (
 )
 
 type Queue interface {
-	AddInvision(item *QueueItem) (int, error)
+	AddCanvas(item *QueueItem) (int, error)
 	StartPolling(botSession *discordgo.Session)
 	GetBotDefaultSettings() (*entities.DefaultSettings, error)
 	UpdateDefaultDimensions(width, height int) (*entities.DefaultSettings, error)
