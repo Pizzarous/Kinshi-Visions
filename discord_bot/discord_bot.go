@@ -87,9 +87,8 @@ func New(cfg Config) (Bot, error) {
 		removeCommands:     cfg.RemoveCommands,
 	}
 
-	err = bot.cleanupStaleCommands()
-	if err != nil {
-		return nil, err
+	if err = bot.cleanupStaleCommands(); err != nil {
+		log.Printf("Warning: could not clean up stale commands (bot may need applications.commands scope): %v", err)
 	}
 
 	err = bot.addInvisionCommand()
