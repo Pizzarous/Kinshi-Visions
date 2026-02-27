@@ -980,7 +980,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
 						CustomID: "invision_variation_1",
-						Emoji: discordgo.ComponentEmoji{
+						Emoji: &discordgo.ComponentEmoji{
 							Name: "♻️",
 						},
 					},
@@ -993,7 +993,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
 						CustomID: "invision_variation_2",
-						Emoji: discordgo.ComponentEmoji{
+						Emoji: &discordgo.ComponentEmoji{
 							Name: "♻️",
 						},
 					},
@@ -1006,7 +1006,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
 						CustomID: "invision_variation_3",
-						Emoji: discordgo.ComponentEmoji{
+						Emoji: &discordgo.ComponentEmoji{
 							Name: "♻️",
 						},
 					},
@@ -1019,7 +1019,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
 						CustomID: "invision_variation_4",
-						Emoji: discordgo.ComponentEmoji{
+						Emoji: &discordgo.ComponentEmoji{
 							Name: "♻️",
 						},
 					},
@@ -1032,7 +1032,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
 						CustomID: "invision_reroll",
-						Emoji: discordgo.ComponentEmoji{
+						Emoji: &discordgo.ComponentEmoji{
 							Name: "🎲",
 						},
 					},
@@ -1049,7 +1049,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
 						CustomID: "invision_upscale_1",
-						Emoji: discordgo.ComponentEmoji{
+						Emoji: &discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
 					},
@@ -1062,7 +1062,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
 						CustomID: "invision_upscale_2",
-						Emoji: discordgo.ComponentEmoji{
+						Emoji: &discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
 					},
@@ -1075,7 +1075,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
 						CustomID: "invision_upscale_3",
-						Emoji: discordgo.ComponentEmoji{
+						Emoji: &discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
 					},
@@ -1088,7 +1088,7 @@ func (q *queueImpl) processInvisionGrid(newGeneration *entities.ImageGeneration,
 						Disabled: false,
 						// CustomID is a thing telling Discord which data to send when this button will be pressed.
 						CustomID: "invision_upscale_4",
-						Emoji: discordgo.ComponentEmoji{
+						Emoji: &discordgo.ComponentEmoji{
 							Name: "⬆️",
 						},
 					},
