@@ -11,6 +11,7 @@ import (
 	"kinshi_vision_bot/stable_diffusion_api"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -41,6 +42,15 @@ func main() {
 	guildID := getEnvVar("GUILD_ID", "")
 	botToken := getEnvVar("BOT_TOKEN", "")
 	apiHost := getEnvVar("API_HOST", "")
+
+	var blockedKeywords []string
+	if raw := getEnvVar("BLOCKED_KEYWORDS", ""); raw != "" {
+		for _, kw := range strings.Split(raw, ",") {
+			if kw = strings.TrimSpace(kw); kw != "" {
+				blockedKeywords = append(blockedKeywords, kw)
+			}
+		}
+	}
 
 	if guildID == "" {
 		log.Fatal("Guild ID is required")
@@ -100,6 +110,7 @@ func main() {
 		StableDiffusionAPI:  stableDiffusionAPI,
 		ImageGenerationRepo: generationRepo,
 		DefaultSettingsRepo: defaultSettingsRepo,
+		BlockedKeywords:     blockedKeywords,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create invision queue: %v", err)

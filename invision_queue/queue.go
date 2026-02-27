@@ -44,12 +44,14 @@ type queueImpl struct {
 	compositeRenderer   composite_renderer.Renderer
 	defaultSettingsRepo default_settings.Repository
 	botDefaultSettings  *entities.DefaultSettings
+	blockedKeywords     []string
 }
 
 type Config struct {
 	StableDiffusionAPI  stable_diffusion_api.StableDiffusionAPI
 	ImageGenerationRepo image_generations.Repository
 	DefaultSettingsRepo default_settings.Repository
+	BlockedKeywords     []string
 }
 
 func New(cfg Config) (Queue, error) {
@@ -76,6 +78,7 @@ func New(cfg Config) (Queue, error) {
 		queue:               make(chan *QueueItem, 100),
 		compositeRenderer:   compositeRenderer,
 		defaultSettingsRepo: cfg.DefaultSettingsRepo,
+		blockedKeywords:     cfg.BlockedKeywords,
 	}, nil
 }
 
@@ -592,8 +595,23 @@ func (q *queueImpl) processCurrentInvision() {
 			return
 		}
 
-		// add optional parameter: Negative prompt
-		negativePrompt := q.currentInvision.NegativePrompt
+		// scrub blocked keywords from prompt and negative prompt (case-insensitive)
+		scrubText := func(s string) string {
+			for _, kw := range q.blockedKeywords {
+				re := regexp.MustCompile("(?i)" + regexp.QuoteMeta(kw))
+				s = re.ReplaceAllString(s, "")
+			}
+			return strings.TrimSpace(s)
+		}
+		q.currentInvision.Prompt = scrubText(q.currentInvision.Prompt)
+		q.currentInvision.NegativePrompt = scrubText(q.currentInvision.NegativePrompt)
+
+		// add optional parameter: Negative prompt — always prepend safety terms
+		safetyNegative := strings.Join(q.blockedKeywords, ", ")
+		negativePrompt := safetyNegative
+		if q.currentInvision.NegativePrompt != "" {
+			negativePrompt = safetyNegative + ", " + q.currentInvision.NegativePrompt
+		}
 
 		// add optional parameter: sampler
 		samplerName1 := ""
