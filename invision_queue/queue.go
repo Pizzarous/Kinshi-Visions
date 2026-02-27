@@ -457,7 +457,7 @@ var seedRegex = regexp.MustCompile(`\s?--seed ([\d]+)\s?`)
 func extractSeedFromPrompt(prompt string) (*seedResult, error) {
 
 	seedMatches := seedRegex.FindStringSubmatch(prompt)
-	var seedValue int64 = 0
+	var seedValue int64
 	var Seed_MaxValue int64 = int64(math.MaxInt64) // although SD accepts: 12345678901234567890
 
 	if len(seedMatches) == 2 {
@@ -619,14 +619,10 @@ func (q *queueImpl) processCurrentInvision() {
 
 		scaledWidth := defaultWidth
 		scaledHeight := defaultHeight
-		hiresWidth := defaultWidth
-		hiresHeight := defaultHeight
 
 		if promptRes.Width > defaultWidth || promptRes.Height > defaultHeight {
 			scaledWidth = promptRes.Width
 			scaledHeight = promptRes.Height
-			hiresWidth = promptRes.Width
-			hiresHeight = promptRes.Height
 		}
 
 		promptResPx, errPx := extractPixelFromPrompt(promptRes.SanitizedPrompt, defaultWidth)
@@ -639,14 +635,13 @@ func (q *queueImpl) processCurrentInvision() {
 		if promptResPx.IsProcessed {
 			scaledWidth = promptResPx.Width
 			scaledHeight = promptResPx.Height
-			hiresWidth = promptResPx.Width
-			hiresHeight = promptResPx.Height
 		}
 
 		// add optional parameter: enable hires.fix
 		enableHR1 := false
-		upscaleRate1 := 1.0
+		var upscaleRate1 float64
 		upscalerName1 := ""
+		var hiresWidth, hiresHeight int
 
 		// extract --zoom parameter
 
@@ -659,7 +654,7 @@ func (q *queueImpl) processCurrentInvision() {
 		}
 
 		enableHR1 = q.currentInvision.UseHiresFix
-		if enableHR1 == true {
+		if enableHR1 {
 			upscaleRate1 = promptResZ.ZoomScale
 			upscalerName1 = "Latent"
 			hiresWidth = 0
@@ -785,7 +780,7 @@ func invisionMessageContent(generation *entities.ImageGeneration, user *discordg
 		}
 
 		sizeString := ""
-		if generation.EnableHR == true {
+		if generation.EnableHR {
 			sizeString = fmt.Sprintf("%d x %d -> (x %s by hires.fix)",
 				generation.Width,
 				generation.Height,

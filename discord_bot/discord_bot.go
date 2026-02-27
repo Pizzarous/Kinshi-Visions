@@ -694,7 +694,7 @@ func (b *botImpl) processInvisionDimensionSetting(s *discordgo.Session, i *disco
 
 	messageComponents := settingsMessageComponents(botSettings)
 
-	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	err = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseUpdateMessage,
 		Data: &discordgo.InteractionResponseData{
 			Content:    "Choose defaults settings for the invision command:",
