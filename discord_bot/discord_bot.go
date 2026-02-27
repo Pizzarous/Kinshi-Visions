@@ -80,10 +80,16 @@ func New(cfg Config) (Bot, error) {
 	bot := &botImpl{
 		developmentMode:    cfg.DevelopmentMode,
 		botSession:         botSession,
+		guildID:            cfg.GuildID,
 		invisionQueue:      cfg.InvisionQueue,
 		registeredCommands: make([]*discordgo.ApplicationCommand, 0),
 		invisionCommand:    cfg.InvisionCommand,
 		removeCommands:     cfg.RemoveCommands,
+	}
+
+	err = bot.cleanupStaleCommands()
+	if err != nil {
+		return nil, err
 	}
 
 	err = bot.addInvisionCommand()
@@ -263,6 +269,30 @@ func (b *botImpl) teardown() error {
 	}
 
 	return b.botSession.Close()
+}
+
+func (b *botImpl) cleanupStaleCommands() error {
+	existing, err := b.botSession.ApplicationCommands(b.botSession.State.User.ID, b.guildID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch existing commands: %w", err)
+	}
+
+	keep := map[string]bool{
+		b.invisionCommandString():         true,
+		b.invisionSettingsCommandString(): true,
+	}
+
+	for _, cmd := range existing {
+		if !keep[cmd.Name] {
+			log.Printf("Deleting stale command '%s'...", cmd.Name)
+
+			if delErr := b.botSession.ApplicationCommandDelete(b.botSession.State.User.ID, b.guildID, cmd.ID); delErr != nil {
+				log.Printf("Failed to delete stale command '%s': %v", cmd.Name, delErr)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (b *botImpl) addInvisionCommand() error {
